@@ -12,7 +12,8 @@ ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("dgknk.QuickFind.1
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QLabel, QListView, QPushButton, QStatusBar,
-    QStyledItemDelegate, QStyle, QFrame, QGraphicsDropShadowEffect
+    QStyledItemDelegate, QStyle, QFrame, QGraphicsDropShadowEffect,
+    QDialog, QRadioButton, QButtonGroup, QMessageBox
 )
 from PySide6.QtCore import (
     Qt, QSize, QRect, QThread, Signal, QModelIndex,
@@ -533,6 +534,168 @@ class NeonSearchBar(QWidget):
 #  INDEXER THREAD
 # ══════════════════════════════════════════════════════════════
 
+# ══════════════════════════════════════════════════════════════
+#  SETTINGS DIALOG
+# ══════════════════════════════════════════════════════════════
+
+class SettingsDialog(QDialog):
+    def __init__(self, parent=None, is_dark=True):
+        super().__init__(parent)
+        self.setWindowTitle("Settings")
+        self.setFixedSize(420, 380)
+        self.setModal(True)
+
+        from database import PRESETS, get_preset_name
+
+        current = get_preset_name()
+        T = THEMES["dark" if is_dark else "light"]
+
+        bg = T["bg"].name()
+        surface = T["surface_elevated"].name()
+        text = T["text"].name()
+        text_m = T["text_muted"].name()
+        accent = T["accent"].name()
+        accent2 = T["accent2"].name()
+        border = T["card_border"].name()
+        badge_bg = T["badge_purple_bg"].name()
+
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {bg};
+                color: {text};
+            }}
+            QLabel {{
+                color: {text};
+                background: transparent;
+            }}
+            #section_title {{
+                color: {accent};
+                font-family: Consolas;
+                font-size: 11px;
+                font-weight: bold;
+            }}
+            #warning_label {{
+                color: {text_m};
+                font-family: Consolas;
+                font-size: 8px;
+            }}
+            QRadioButton {{
+                color: {text};
+                font-family: Consolas;
+                font-size: 10px;
+                spacing: 8px;
+                padding: 8px 12px;
+                background: {surface};
+                border: 1px solid {border};
+                border-radius: 8px;
+            }}
+            QRadioButton:checked {{
+                border-color: {accent};
+                background: {badge_bg};
+            }}
+            QRadioButton::indicator {{
+                width: 14px;
+                height: 14px;
+                border-radius: 7px;
+                border: 2px solid {text_m};
+                background: transparent;
+            }}
+            QRadioButton::indicator:checked {{
+                border-color: {accent};
+                background: qradialgradient(cx:0.5, cy:0.5, radius:0.4,
+                    fx:0.5, fy:0.5, stop:0 {accent}, stop:1 {accent2});
+            }}
+            #save_btn {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 {accent}, stop:1 {accent2});
+                color: white;
+                border: none;
+                border-radius: 10px;
+                padding: 10px 24px;
+                font-family: Consolas;
+                font-size: 11px;
+                font-weight: bold;
+            }}
+            #save_btn:hover {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 {accent2}, stop:1 {accent});
+            }}
+            #cancel_btn {{
+                background: {surface};
+                color: {text_m};
+                border: 1px solid {border};
+                border-radius: 10px;
+                padding: 10px 24px;
+                font-family: Consolas;
+                font-size: 11px;
+            }}
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setSpacing(10)
+
+        title = QLabel("CONTENT INDEXING DEPTH")
+        title.setObjectName("section_title")
+        layout.addWidget(title)
+
+        warning = QLabel("// higher depth = better search accuracy, but larger database\n// changing this requires a full reindex")
+        warning.setObjectName("warning_label")
+        layout.addWidget(warning)
+        layout.addSpacing(4)
+
+        self._group = QButtonGroup(self)
+        self._radios = {}
+
+        preset_order = ["minimal", "standard", "deep", "maximum"]
+        for key in preset_order:
+            p = PRESETS[key]
+            txt = f"{key.upper()}  —  {p['label']}"
+            if key == "minimal":
+                txt += "  [default]"
+            rb = QRadioButton(txt)
+            if key == current:
+                rb.setChecked(True)
+            self._group.addButton(rb)
+            self._radios[key] = rb
+            layout.addWidget(rb)
+
+        layout.addStretch()
+
+        # Buttons
+        btn_row = QWidget()
+        btn_layout = QHBoxLayout(btn_row)
+        btn_layout.setContentsMargins(0, 0, 0, 0)
+        btn_layout.addStretch()
+
+        cancel_btn = QPushButton("CANCEL")
+        cancel_btn.setObjectName("cancel_btn")
+        cancel_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        cancel_btn.clicked.connect(self.reject)
+
+        save_btn = QPushButton("SAVE & REINDEX")
+        save_btn.setObjectName("save_btn")
+        save_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        save_btn.clicked.connect(self._save)
+
+        btn_layout.addWidget(cancel_btn)
+        btn_layout.addSpacing(8)
+        btn_layout.addWidget(save_btn)
+        layout.addWidget(btn_row)
+
+        self._selected_preset = current
+
+    def _save(self):
+        for key, rb in self._radios.items():
+            if rb.isChecked():
+                self._selected_preset = key
+                break
+        self.accept()
+
+    def get_selected_preset(self):
+        return self._selected_preset
+
+
 class IndexerThread(QThread):
     progress = Signal(int)
     status = Signal(str)
@@ -655,6 +818,15 @@ class QuickFindWindow(QMainWindow):
         self.reindex_btn.setCursor(QCursor(Qt.PointingHandCursor))
         self.reindex_btn.clicked.connect(self._reindex)
 
+        # Settings button
+        self.settings_btn = QPushButton("⚙")
+        self.settings_btn.setFont(QFont("Segoe UI Emoji", 15))
+        self.settings_btn.setFixedSize(40, 40)
+        self.settings_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        self.settings_btn.clicked.connect(self._open_settings)
+
+        hl.addWidget(self.settings_btn)
+        hl.addSpacing(6)
         hl.addWidget(self.theme_btn)
         hl.addSpacing(8)
         hl.addWidget(self.reindex_btn)
@@ -701,6 +873,74 @@ class QuickFindWindow(QMainWindow):
         search_inner.addWidget(self.shortcut_label)
 
         sa_layout.addWidget(self.search_neon)
+
+        # ── Filter chips ──
+        filter_row = QWidget()
+        fr_layout = QHBoxLayout(filter_row)
+        fr_layout.setContentsMargins(4, 4, 4, 0)
+        fr_layout.setSpacing(5)
+
+        self._active_filter = None
+        self._filter_buttons = {}
+
+        FILTERS = {
+            "ALL":     None,
+            "DOCS":    [".pdf", ".docx", ".doc", ".rtf", ".txt", ".md", ".epub", ".rst"],
+            "SHEETS":  [".xlsx", ".xls", ".csv"],
+            "SLIDES":  [".pptx", ".ppt"],
+            "CODE":    [".py", ".js", ".ts", ".jsx", ".tsx", ".html", ".css", ".java",
+                        ".cpp", ".c", ".cs", ".go", ".rs", ".rb", ".php", ".kt"],
+            "DATA":    [".json", ".xml", ".yaml", ".yml", ".toml", ".sql", ".ini", ".cfg"],
+            "MEDIA":   [".jpg", ".jpeg", ".png", ".gif", ".svg", ".mp4", ".mp3", ".wav"],
+            "ARCHIVE": [".zip", ".rar", ".7z", ".tar", ".gz", ".exe", ".msi"],
+        }
+        self._filter_map = FILTERS
+
+        for label in FILTERS:
+            btn = QPushButton(label)
+            btn.setFont(QFont("Consolas", 8, QFont.Bold))
+            btn.setFixedHeight(26)
+            btn.setCursor(QCursor(Qt.PointingHandCursor))
+            btn.setCheckable(True)
+            if label == "ALL":
+                btn.setChecked(True)
+            btn.clicked.connect(lambda checked, l=label: self._set_filter(l))
+            fr_layout.addWidget(btn)
+            self._filter_buttons[label] = btn
+
+        fr_layout.addStretch()
+
+        # Sort buttons
+        sep = QLabel("|")
+        sep.setFont(QFont("Consolas", 10))
+        sep.setFixedWidth(12)
+        fr_layout.addWidget(sep)
+
+        self._active_sort = "relevance"
+        self._sort_buttons = {}
+
+        SORTS = {
+            "▼ REL":   "relevance",
+            "▼ NAME":  "name_asc",
+            "▼ SIZE":  "size_desc",
+            "▼ NEW":   "date_new",
+            "▼ OLD":   "date_old",
+        }
+        self._sort_label_map = SORTS
+
+        for label, key in SORTS.items():
+            btn = QPushButton(label)
+            btn.setFont(QFont("Consolas", 7, QFont.Bold))
+            btn.setFixedHeight(26)
+            btn.setCursor(QCursor(Qt.PointingHandCursor))
+            btn.setCheckable(True)
+            if key == "relevance":
+                btn.setChecked(True)
+            btn.clicked.connect(lambda checked, k=key: self._set_sort(k))
+            fr_layout.addWidget(btn)
+            self._sort_buttons[key] = btn
+
+        sa_layout.addWidget(filter_row)
 
         # Stats row
         stats = QWidget()
@@ -888,6 +1128,15 @@ class QuickFindWindow(QMainWindow):
                 border-top: 1px solid {divider};
             }}
 
+            #settings_btn {{
+                background: {badge_p_bg};
+                border: 1px solid {s_border};
+                border-radius: 10px;
+            }}
+            #settings_btn:hover {{
+                border-color: {accent};
+            }}
+
             #theme_btn {{
                 background: {badge_p_bg};
                 border: 1px solid {s_border};
@@ -908,6 +1157,24 @@ class QuickFindWindow(QMainWindow):
             #reindex_btn:hover {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                     stop:0 {accent_h}, stop:1 {accent2});
+            }}
+
+            QPushButton[checkable="true"] {{
+                background: {badge_p_bg};
+                color: {text_m};
+                border: 1px solid transparent;
+                border-radius: 6px;
+                padding: 2px 10px;
+                font-family: Consolas;
+            }}
+            QPushButton[checkable="true"]:checked {{
+                background: {accent};
+                color: white;
+                border-color: {accent};
+            }}
+            QPushButton[checkable="true"]:hover {{
+                border-color: {accent};
+                color: {text};
             }}
 
             #formats_label {{
@@ -941,6 +1208,7 @@ class QuickFindWindow(QMainWindow):
         # Set object names
         for w, n in [
             (self.header, "header"), (self.divider, "divider"),
+            (self.settings_btn, "settings_btn"),
             (self.theme_btn, "theme_btn"), (self.reindex_btn, "reindex_btn"),
             (self.title_label, "title_label"), (self.subtitle_label, "subtitle"),
             (self.formats_label, "formats_label"), (self.search_prefix, "search_prefix"),
@@ -995,15 +1263,29 @@ class QuickFindWindow(QMainWindow):
 
     # ─── Search ───────────────────────────────────────────
 
+    def _set_filter(self, label):
+        for name, btn in self._filter_buttons.items():
+            btn.setChecked(name == label)
+        self._active_filter = self._filter_map.get(label)
+        if self.search_input.text().strip() or self._active_filter:
+            self._do_search()
+
+    def _set_sort(self, key):
+        for k, btn in self._sort_buttons.items():
+            btn.setChecked(k == key)
+        self._active_sort = key
+        if self.search_input.text().strip() or self._active_filter:
+            self._do_search()
+
     def _do_search(self):
         q = self.search_input.text().strip()
-        if not q:
+        if not q and not self._active_filter:
             self._show_empty("⚡", "READY TO SEARCH",
-                             "// type a query and press ENTER\n// searches file names + document contents")
+                             "// type a query and press ENTER\n// searches file names + document contents\n// use ext:pdf or filter chips to filter by type")
             return
 
         t0 = time.perf_counter()
-        results = self.db.search(q, limit=200)
+        results = self.db.search(q, limit=200, ext_filter=self._active_filter, sort=self._active_sort)
         ms = (time.perf_counter() - t0) * 1000
 
         if results:
@@ -1100,6 +1382,16 @@ class QuickFindWindow(QMainWindow):
         self._indexer_thread.finished_indexing.connect(self._on_idx_done)
         self._indexer_thread.start()
 
+    def _open_settings(self):
+        dlg = SettingsDialog(self, self.is_dark)
+        if dlg.exec() == QDialog.Accepted:
+            new_preset = dlg.get_selected_preset()
+            from database import get_preset_name, set_preset_name
+            if new_preset != get_preset_name():
+                set_preset_name(new_preset)
+                self.status_label.setText(f"// preset changed to {new_preset} — reindexing...")
+                self._run_indexer(True)
+
     def _reindex(self):
         if self._indexer_thread and self._indexer_thread.isRunning():
             self._indexer_thread.stop()
@@ -1161,6 +1453,12 @@ def main():
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
+
+    # Set app icon for taskbar
+    ico = os.path.join(SCRIPT_DIR, "quickfind.ico")
+    if os.path.exists(ico):
+        app.setWindowIcon(QIcon(ico))
+
     window = QuickFindWindow()
     window.show()
     sys.exit(app.exec())
