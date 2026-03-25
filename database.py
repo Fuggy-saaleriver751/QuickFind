@@ -1,6 +1,7 @@
 """
 QuickFind — Database, Indexer & File Watcher
-SQLite FTS5 · İçerik indeksleme · Gerçek zamanlı dosya izleme
+SQLite FTS5 · Content indexing · Real-time file watching
+Supports: PDF, DOCX, XLSX, PPTX, RTF, EPUB + 35 plain-text formats
 """
 
 import sqlite3
@@ -26,12 +27,145 @@ TEXT_EXTENSIONS = {
     ".tex", ".bib", ".srt",
 }
 
-MAX_CONTENT_BYTES = 2048  # İlk 2KB (indeks boyutunu küçük tutar)
+RICH_EXTENSIONS = {
+    ".pdf", ".docx", ".xlsx", ".pptx", ".rtf", ".epub",
+}
 
-# İndeks konumu: D:\QuickFind_Index
+ALL_CONTENT_EXTENSIONS = TEXT_EXTENSIONS | RICH_EXTENSIONS
+
+MAX_CONTENT_BYTES = 8192   # First 8KB for plain text files
+MAX_CONTENT_CHARS = 4096   # Max chars to store from rich documents
+MAX_RICH_FILE_SIZE = 50_000_000  # Skip rich docs larger than 50MB
+
 DB_DIR = "D:\\QuickFind_Index"
 DB_PATH = os.path.join(DB_DIR, "index.db")
 
+
+# ══════════════════════════════════════════════════════════════
+#  RICH DOCUMENT READERS
+# ══════════════════════════════════════════════════════════════
+
+def _read_pdf(path):
+    try:
+        import fitz  # pymupdf
+        doc = fitz.open(path)
+        text_parts = []
+        for page in doc:
+            text_parts.append(page.get_text())
+            if len("".join(text_parts)) > MAX_CONTENT_CHARS:
+                break
+        doc.close()
+        return "".join(text_parts)[:MAX_CONTENT_CHARS]
+    except Exception:
+        return ""
+
+
+def _read_docx(path):
+    try:
+        from docx import Document
+        doc = Document(path)
+        text_parts = []
+        total = 0
+        for para in doc.paragraphs:
+            text_parts.append(para.text)
+            total += len(para.text)
+            if total > MAX_CONTENT_CHARS:
+                break
+        return "\n".join(text_parts)[:MAX_CONTENT_CHARS]
+    except Exception:
+        return ""
+
+
+def _read_xlsx(path):
+    try:
+        from openpyxl import load_workbook
+        wb = load_workbook(path, read_only=True, data_only=True)
+        text_parts = []
+        total = 0
+        for sheet in wb.sheetnames:
+            ws = wb[sheet]
+            for row in ws.iter_rows(values_only=True):
+                vals = [str(c) for c in row if c is not None]
+                if vals:
+                    line = " ".join(vals)
+                    text_parts.append(line)
+                    total += len(line)
+                    if total > MAX_CONTENT_CHARS:
+                        break
+            if total > MAX_CONTENT_CHARS:
+                break
+        wb.close()
+        return "\n".join(text_parts)[:MAX_CONTENT_CHARS]
+    except Exception:
+        return ""
+
+
+def _read_pptx(path):
+    try:
+        from pptx import Presentation
+        prs = Presentation(path)
+        text_parts = []
+        total = 0
+        for slide in prs.slides:
+            for shape in slide.shapes:
+                if shape.has_text_frame:
+                    for para in shape.text_frame.paragraphs:
+                        text_parts.append(para.text)
+                        total += len(para.text)
+                        if total > MAX_CONTENT_CHARS:
+                            break
+                if total > MAX_CONTENT_CHARS:
+                    break
+            if total > MAX_CONTENT_CHARS:
+                break
+        return "\n".join(text_parts)[:MAX_CONTENT_CHARS]
+    except Exception:
+        return ""
+
+
+def _read_rtf(path):
+    try:
+        from striprtf.striprtf import rtf_to_text
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            raw = f.read(MAX_CONTENT_BYTES * 4)
+        return rtf_to_text(raw)[:MAX_CONTENT_CHARS]
+    except Exception:
+        return ""
+
+
+def _read_epub(path):
+    try:
+        import ebooklib
+        from ebooklib import epub
+        from bs4 import BeautifulSoup
+        book = epub.read_epub(path, options={"ignore_ncx": True})
+        text_parts = []
+        total = 0
+        for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
+            soup = BeautifulSoup(item.get_content(), "html.parser")
+            text = soup.get_text(separator=" ", strip=True)
+            text_parts.append(text)
+            total += len(text)
+            if total > MAX_CONTENT_CHARS:
+                break
+        return "\n".join(text_parts)[:MAX_CONTENT_CHARS]
+    except Exception:
+        return ""
+
+
+RICH_READERS = {
+    ".pdf": _read_pdf,
+    ".docx": _read_docx,
+    ".xlsx": _read_xlsx,
+    ".pptx": _read_pptx,
+    ".rtf": _read_rtf,
+    ".epub": _read_epub,
+}
+
+
+# ══════════════════════════════════════════════════════════════
+#  DATABASE
+# ══════════════════════════════════════════════════════════════
 
 class FileDatabase:
     def __init__(self):
@@ -121,7 +255,6 @@ class FileDatabase:
             self.conn.commit()
 
     def insert_batch(self, file_list):
-        """file_list: [(name, path, ext, size, modified, is_dir, content_text), ...]"""
         with self.lock:
             self.conn.executemany(
                 "INSERT OR IGNORE INTO files(name, path, extension, size, modified, is_dir, content_text) "
@@ -130,10 +263,7 @@ class FileDatabase:
             )
             self.conn.commit()
 
-    # ─── Tekil dosya işlemleri (watcher için) ─────────────
-
     def upsert_file(self, name, path, ext, size, modified, is_dir, content_text=""):
-        """Tek dosya ekle veya güncelle"""
         with self.lock:
             self.conn.execute(
                 "INSERT INTO files(name, path, extension, size, modified, is_dir, content_text) "
@@ -147,21 +277,16 @@ class FileDatabase:
             self.conn.commit()
 
     def delete_file(self, path):
-        """Tek dosya sil"""
         with self.lock:
             self.conn.execute("DELETE FROM files WHERE path=?", (path,))
             self.conn.commit()
 
     def rename_file(self, old_path, new_path):
-        """Dosya taşıma/yeniden adlandırma"""
         self.delete_file(old_path)
-        # Yeni dosyayı ekle (watcher zaten created event de gönderecek)
 
     def path_exists(self, path):
         cur = self.conn.execute("SELECT 1 FROM files WHERE path=?", (path,))
         return cur.fetchone() is not None
-
-    # ─── Arama ────────────────────────────────────────────
 
     def search(self, query, limit=200):
         if not query or not query.strip():
@@ -196,7 +321,6 @@ class FileDatabase:
         self.conn.close()
 
     def get_db_size_mb(self):
-        """İndeks dosya boyutunu MB olarak döndür"""
         total = 0
         for f in os.listdir(DB_DIR):
             fp = os.path.join(DB_DIR, f)
@@ -206,7 +330,7 @@ class FileDatabase:
 
 
 # ══════════════════════════════════════════════════════════════
-#  FILE INDEXER (İlk tam tarama)
+#  FILE INDEXER
 # ══════════════════════════════════════════════════════════════
 
 class FileIndexer:
@@ -265,20 +389,30 @@ class FileIndexer:
             self.progress_callback(count)
 
     @staticmethod
-    def read_content(path, ext):
-        if ext not in TEXT_EXTENSIONS:
-            return ""
-        try:
-            with open(path, "r", encoding="utf-8", errors="ignore") as f:
-                return f.read(MAX_CONTENT_BYTES)
-        except (PermissionError, OSError):
-            return ""
+    def read_content(path, ext, size=0):
+        """Read content from any supported file type."""
+        if ext in RICH_EXTENSIONS:
+            if size > MAX_RICH_FILE_SIZE:
+                return ""
+            reader = RICH_READERS.get(ext)
+            if reader:
+                try:
+                    return reader(path)
+                except Exception:
+                    return ""
+        elif ext in TEXT_EXTENSIONS:
+            try:
+                with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                    return f.read(MAX_CONTENT_BYTES)
+            except (PermissionError, OSError):
+                return ""
+        return ""
 
     def _index_worker(self, drives, reindex):
         start_time = time.time()
 
         if reindex:
-            self._status("Eski indeks temizleniyor...")
+            self._status("Clearing old index...")
             self.db.clear()
 
         self.total_indexed = 0
@@ -288,7 +422,7 @@ class FileIndexer:
         for drive in drives:
             if self._stop_event.is_set():
                 break
-            self._status(f"Taranıyor: {drive}")
+            self._status(f"Scanning: {drive}")
             self._scan_directory(drive, batch, batch_size)
 
         if batch:
@@ -302,7 +436,7 @@ class FileIndexer:
 
         count = self.db.get_file_count()
         db_size = self.db.get_db_size_mb()
-        self._status(f"Hazır! {count:,} dosya ({db_size:.0f} MB) — {elapsed:.1f}s")
+        self._status(f"Ready! {count:,} files ({db_size:.0f} MB) — {elapsed:.1f}s")
         self._progress(count)
 
     def _scan_directory(self, root, batch, batch_size):
@@ -335,8 +469,11 @@ class FileIndexer:
                             modified = 0
 
                         content = ""
-                        if size < 500_000:
-                            content = self.read_content(entry.path, ext)
+                        if ext in RICH_EXTENSIONS:
+                            if size < MAX_RICH_FILE_SIZE:
+                                content = self.read_content(entry.path, ext, size)
+                        elif ext in TEXT_EXTENSIONS and size < 500_000:
+                            content = self.read_content(entry.path, ext, size)
 
                         batch.append((name, entry.path, ext, size, modified, 0, content))
                         self.total_indexed += 1
@@ -346,7 +483,7 @@ class FileIndexer:
                         batch.clear()
                         self._progress(self.total_indexed)
                         if self.total_indexed % 25000 == 0:
-                            self._status(f"Taranıyor... {self.total_indexed:,} dosya")
+                            self._status(f"Scanning... {self.total_indexed:,} files")
 
                 except (PermissionError, OSError):
                     continue
@@ -355,12 +492,10 @@ class FileIndexer:
 
 
 # ══════════════════════════════════════════════════════════════
-#  FILE WATCHER (Gerçek zamanlı dosya izleme)
+#  FILE WATCHER
 # ══════════════════════════════════════════════════════════════
 
 class QuickFindEventHandler(FileSystemEventHandler):
-    """Dosya sistemi değişikliklerini yakalayıp indeksi günceller"""
-
     def __init__(self, db: FileDatabase, status_callback=None):
         super().__init__()
         self.db = db
@@ -384,7 +519,6 @@ class QuickFindEventHandler(FileSystemEventHandler):
             self.status_callback(msg)
 
     def _index_single(self, path):
-        """Tek bir dosya/klasörü indeksle"""
         if self._should_skip(path):
             return
         try:
@@ -400,9 +534,7 @@ class QuickFindEventHandler(FileSystemEventHandler):
                 except OSError:
                     size = 0
                     modified = 0
-                content = ""
-                if size < 500_000:
-                    content = FileIndexer.read_content(path, ext)
+                content = FileIndexer.read_content(path, ext, size)
                 self.db.upsert_file(name, path, ext, size, modified, 0, content)
         except Exception:
             pass
@@ -411,13 +543,12 @@ class QuickFindEventHandler(FileSystemEventHandler):
         if self._should_skip(event.src_path):
             return
         self._index_single(event.src_path)
-        self._status(f"Eklendi: {os.path.basename(event.src_path)}")
+        self._status(f"Added: {os.path.basename(event.src_path)}")
 
     def on_deleted(self, event):
         if self._should_skip(event.src_path):
             return
         self.db.delete_file(event.src_path)
-        # Klasör silindiğinde alt dosyaları da temizle
         if event.is_directory:
             with self.db.lock:
                 self.db.conn.execute(
@@ -425,7 +556,7 @@ class QuickFindEventHandler(FileSystemEventHandler):
                     (event.src_path + "%",)
                 )
                 self.db.conn.commit()
-        self._status(f"Silindi: {os.path.basename(event.src_path)}")
+        self._status(f"Removed: {os.path.basename(event.src_path)}")
 
     def on_modified(self, event):
         if event.is_directory:
@@ -438,7 +569,6 @@ class QuickFindEventHandler(FileSystemEventHandler):
         if self._should_skip(event.src_path):
             self._index_single(event.dest_path)
             return
-        # Eski yolu sil
         self.db.delete_file(event.src_path)
         if event.is_directory:
             with self.db.lock:
@@ -447,15 +577,12 @@ class QuickFindEventHandler(FileSystemEventHandler):
                     (event.src_path + "%",)
                 )
                 self.db.conn.commit()
-        # Yeni yolu ekle
         if not self._should_skip(event.dest_path):
             self._index_single(event.dest_path)
-            self._status(f"Taşındı: {os.path.basename(event.dest_path)}")
+            self._status(f"Moved: {os.path.basename(event.dest_path)}")
 
 
 class FileWatcher:
-    """Tüm diskleri gerçek zamanlı izler"""
-
     def __init__(self, db: FileDatabase, status_callback=None):
         self.db = db
         self.handler = QuickFindEventHandler(db, status_callback)
@@ -465,8 +592,6 @@ class FileWatcher:
     def start(self):
         if self._running:
             return
-
-        # Mevcut tüm diskleri izle
         for letter in "CDEFGHIJKLMNOPQRSTUVWXYZ":
             drive = f"{letter}:\\"
             if os.path.exists(drive):
@@ -474,7 +599,6 @@ class FileWatcher:
                     self.observer.schedule(self.handler, drive, recursive=True)
                 except Exception:
                     pass
-
         self.observer.daemon = True
         self.observer.start()
         self._running = True
