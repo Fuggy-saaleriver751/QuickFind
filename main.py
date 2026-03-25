@@ -1,10 +1,10 @@
 """
 QuickFind — Ultra-Fast File Search
-PySide6 · Glassmorphism · Dark/Light · FTS5 Content Search
+PySide6 · Neon Glassmorphism · Dark/Light · FTS5 Content Search
 Supports: PDF, DOCX, XLSX, PPTX, RTF, EPUB + 35 plain-text formats
 """
 
-import sys, os, subprocess, time, ctypes
+import sys, os, subprocess, time, ctypes, math
 from datetime import datetime
 
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("dgknk.QuickFind.1")
@@ -12,142 +12,153 @@ ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("dgknk.QuickFind.1
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QLabel, QListView, QPushButton, QStatusBar,
-    QStyledItemDelegate, QStyle, QGraphicsDropShadowEffect,
-    QGraphicsOpacityEffect, QFrame
+    QStyledItemDelegate, QStyle, QFrame, QGraphicsDropShadowEffect
 )
 from PySide6.QtCore import (
     Qt, QSize, QRect, QThread, Signal, QModelIndex,
-    QAbstractListModel, QPoint, QTimer, QPropertyAnimation,
-    QEasingCurve, QSequentialAnimationGroup, QParallelAnimationGroup,
-    Property, QRectF
+    QAbstractListModel, QTimer, QRectF, QPointF
 )
 from PySide6.QtGui import (
     QColor, QPainter, QFont, QFontMetrics, QPen, QBrush,
-    QIcon, QPainterPath, QLinearGradient, QPixmap, QPalette,
-    QCursor, QRadialGradient, QConicalGradient
+    QIcon, QPainterPath, QLinearGradient, QPixmap, QCursor,
+    QRadialGradient, QShortcut, QKeySequence
 )
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 # ══════════════════════════════════════════════════════════════
-#  THEMES — Premium color palette
+#  THEMES — Cyberpunk / Tech palette
 # ══════════════════════════════════════════════════════════════
 
 THEMES = {
     "dark": {
-        "bg":               QColor(8, 8, 16),
-        "bg_gradient_end":  QColor(14, 10, 28),
-        "surface":          QColor(16, 16, 32),
-        "surface_elevated": QColor(22, 20, 42),
-        "card":             QColor(20, 18, 38),
-        "card_hover":       QColor(28, 24, 52),
-        "card_selected":    QColor(38, 28, 80),
-        "card_border":      QColor(40, 36, 72),
-        "card_border_hover": QColor(80, 60, 160),
-        "search_bg":        QColor(14, 12, 28),
-        "search_border":    QColor(50, 44, 90),
-        "search_focus":     QColor(120, 80, 255),
-        "accent":           QColor(120, 80, 255),
-        "accent_secondary": QColor(200, 80, 255),
-        "accent_hover":     QColor(145, 110, 255),
-        "accent_glow":      QColor(120, 80, 255, 40),
-        "text":             QColor(235, 235, 245),
-        "text_sec":         QColor(155, 155, 185),
-        "text_muted":       QColor(85, 80, 115),
-        "badge_bg":         QColor(30, 22, 65),
-        "badge_text":       QColor(155, 130, 255),
-        "badge_green_bg":   QColor(15, 40, 25),
-        "badge_green_text": QColor(80, 220, 140),
-        "badge_blue_bg":    QColor(15, 25, 50),
-        "badge_blue_text":  QColor(80, 160, 255),
-        "badge_orange_bg":  QColor(45, 30, 10),
-        "badge_orange_text": QColor(255, 180, 60),
-        "divider":          QColor(28, 24, 48),
-        "scrollbar":        QColor(36, 32, 64),
-        "scrollbar_hover":  QColor(60, 52, 100),
-        "green":            QColor(74, 222, 128),
-        "yellow":           QColor(251, 191, 36),
-        "red":              QColor(248, 113, 113),
-        "blue":             QColor(96, 165, 250),
-        "glow_primary":     QColor(120, 80, 255, 20),
-        "glow_secondary":   QColor(200, 80, 255, 12),
+        "bg":               QColor(6, 6, 12),
+        "surface":          QColor(10, 10, 20),
+        "surface_elevated": QColor(16, 16, 30),
+        "card":             QColor(12, 12, 24),
+        "card_hover":       QColor(18, 16, 36),
+        "card_selected":    QColor(24, 16, 56),
+        "card_border":      QColor(30, 28, 56),
+        "card_border_hover": QColor(100, 60, 220, 120),
+        "search_bg":        QColor(8, 8, 18),
+        "search_border":    QColor(40, 36, 72),
+        "search_focus":     QColor(100, 60, 255),
+        "accent":           QColor(100, 60, 255),
+        "accent2":          QColor(0, 210, 255),
+        "accent3":          QColor(255, 40, 150),
+        "accent_hover":     QColor(130, 90, 255),
+        "text":             QColor(230, 230, 242),
+        "text_sec":         QColor(140, 140, 175),
+        "text_muted":       QColor(65, 62, 95),
+        "badge_purple_bg":  QColor(25, 16, 55),
+        "badge_purple_text": QColor(160, 130, 255),
+        "badge_cyan_bg":    QColor(8, 30, 38),
+        "badge_cyan_text":  QColor(0, 210, 255),
+        "badge_green_bg":   QColor(8, 32, 18),
+        "badge_green_text": QColor(0, 230, 118),
+        "badge_pink_bg":    QColor(35, 10, 28),
+        "badge_pink_text":  QColor(255, 80, 180),
+        "badge_orange_bg":  QColor(35, 22, 8),
+        "badge_orange_text": QColor(255, 160, 40),
+        "divider":          QColor(20, 18, 38),
+        "scrollbar":        QColor(28, 26, 50),
+        "scrollbar_hover":  QColor(50, 44, 85),
+        "green":            QColor(0, 230, 118),
+        "yellow":           QColor(255, 200, 40),
+        "red":              QColor(255, 60, 80),
+        "blue":             QColor(0, 150, 255),
+        "grid_line":        QColor(20, 18, 40),
+        "glow1":            QColor(100, 60, 255, 30),
+        "glow2":            QColor(0, 210, 255, 18),
+        "glow3":            QColor(255, 40, 150, 12),
     },
     "light": {
         "bg":               QColor(245, 244, 252),
-        "bg_gradient_end":  QColor(238, 236, 248),
         "surface":          QColor(255, 255, 255),
         "surface_elevated": QColor(255, 255, 255),
         "card":             QColor(255, 255, 255),
         "card_hover":       QColor(248, 246, 255),
         "card_selected":    QColor(238, 232, 255),
-        "card_border":      QColor(220, 216, 236),
-        "card_border_hover": QColor(160, 130, 240),
+        "card_border":      QColor(220, 216, 238),
+        "card_border_hover": QColor(130, 90, 220, 150),
         "search_bg":        QColor(255, 255, 255),
-        "search_border":    QColor(210, 206, 230),
-        "search_focus":     QColor(100, 60, 220),
-        "accent":           QColor(100, 60, 220),
-        "accent_secondary": QColor(180, 60, 220),
-        "accent_hover":     QColor(120, 80, 240),
-        "accent_glow":      QColor(100, 60, 220, 20),
-        "text":             QColor(20, 18, 40),
-        "text_sec":         QColor(80, 75, 110),
-        "text_muted":       QColor(140, 136, 165),
-        "badge_bg":         QColor(240, 236, 252),
-        "badge_text":       QColor(100, 60, 220),
-        "badge_green_bg":   QColor(230, 248, 236),
-        "badge_green_text": QColor(22, 140, 74),
-        "badge_blue_bg":    QColor(230, 240, 252),
-        "badge_blue_text":  QColor(37, 99, 235),
-        "badge_orange_bg":  QColor(255, 245, 230),
-        "badge_orange_text": QColor(200, 120, 0),
-        "divider":          QColor(228, 224, 240),
-        "scrollbar":        QColor(210, 206, 226),
-        "scrollbar_hover":  QColor(180, 176, 206),
-        "green":            QColor(22, 163, 74),
-        "yellow":           QColor(202, 138, 4),
-        "red":              QColor(220, 38, 38),
-        "blue":             QColor(37, 99, 235),
-        "glow_primary":     QColor(100, 60, 220, 10),
-        "glow_secondary":   QColor(180, 60, 220, 6),
+        "search_border":    QColor(200, 196, 225),
+        "search_focus":     QColor(90, 50, 210),
+        "accent":           QColor(90, 50, 210),
+        "accent2":          QColor(0, 160, 210),
+        "accent3":          QColor(210, 30, 120),
+        "accent_hover":     QColor(110, 70, 230),
+        "text":             QColor(20, 18, 42),
+        "text_sec":         QColor(70, 65, 100),
+        "text_muted":       QColor(135, 130, 165),
+        "badge_purple_bg":  QColor(240, 236, 255),
+        "badge_purple_text": QColor(90, 50, 210),
+        "badge_cyan_bg":    QColor(228, 246, 255),
+        "badge_cyan_text":  QColor(0, 120, 170),
+        "badge_green_bg":   QColor(228, 250, 238),
+        "badge_green_text": QColor(0, 140, 65),
+        "badge_pink_bg":    QColor(255, 232, 244),
+        "badge_pink_text":  QColor(190, 25, 105),
+        "badge_orange_bg":  QColor(255, 242, 225),
+        "badge_orange_text": QColor(190, 110, 0),
+        "divider":          QColor(228, 224, 242),
+        "scrollbar":        QColor(210, 206, 228),
+        "scrollbar_hover":  QColor(185, 180, 210),
+        "green":            QColor(0, 150, 65),
+        "yellow":           QColor(190, 140, 0),
+        "red":              QColor(200, 35, 45),
+        "blue":             QColor(0, 100, 210),
+        "grid_line":        QColor(245, 244, 252, 0),
+        "glow1":            QColor(90, 50, 210, 8),
+        "glow2":            QColor(0, 160, 210, 5),
+        "glow3":            QColor(210, 30, 120, 4),
     }
 }
 
-EXT_ICONS = {
-    ".pdf": ("", "red"),      ".doc": ("", "blue"),     ".docx": ("", "blue"),
-    ".xls": ("", "green"),    ".xlsx": ("", "green"),   ".csv": ("", "green"),
-    ".ppt": ("", "yellow"),   ".pptx": ("", "yellow"),
-    ".txt": ("", "text_muted"), ".md": ("", "text_muted"),
-    ".py": ("", "yellow"),    ".js": ("", "yellow"),    ".ts": ("", "blue"),
-    ".html": ("", "red"),     ".css": ("", "blue"),
-    ".java": ("", "red"),     ".cpp": ("", "blue"),     ".c": ("", "blue"),
-    ".cs": ("", "accent"),    ".go": ("", "blue"),      ".rs": ("", "red"),
-    ".json": ("", "yellow"),  ".xml": ("", "red"),      ".yaml": ("", "red"),
-    ".jpg": ("", "green"),    ".jpeg": ("", "green"),   ".png": ("", "green"),
-    ".gif": ("", "yellow"),   ".svg": ("", "yellow"),   ".webp": ("", "green"),
-    ".mp4": ("", "red"),      ".avi": ("", "red"),      ".mkv": ("", "red"),
-    ".mov": ("", "red"),      ".mp3": ("", "accent"),   ".wav": ("", "accent"),
-    ".flac": ("", "accent"),
-    ".zip": ("", "yellow"),   ".rar": ("", "yellow"),   ".7z": ("", "yellow"),
-    ".tar": ("", "yellow"),   ".gz": ("", "yellow"),
-    ".exe": ("", "red"),      ".msi": ("", "red"),      ".bat": ("", "green"),
-    ".ps1": ("", "blue"),     ".sh": ("", "green"),
-    ".sql": ("", "blue"),     ".db": ("", "blue"),
-    ".rtf": ("", "blue"),     ".epub": ("", "green"),
-}
-
-# Extension to display label
 EXT_LABELS = {
     ".pdf": "PDF", ".docx": "DOCX", ".doc": "DOC", ".xlsx": "XLSX",
     ".xls": "XLS", ".pptx": "PPTX", ".ppt": "PPT", ".csv": "CSV",
     ".py": "PY", ".js": "JS", ".ts": "TS", ".html": "HTML",
     ".css": "CSS", ".java": "JAVA", ".cpp": "C++", ".c": "C",
     ".cs": "C#", ".go": "GO", ".rs": "RUST", ".json": "JSON",
-    ".xml": "XML", ".yaml": "YAML", ".md": "MD", ".txt": "TXT",
+    ".xml": "XML", ".yaml": "YML", ".md": "MD", ".txt": "TXT",
     ".jpg": "JPG", ".png": "PNG", ".gif": "GIF", ".svg": "SVG",
     ".mp4": "MP4", ".mp3": "MP3", ".zip": "ZIP", ".rar": "RAR",
     ".exe": "EXE", ".sql": "SQL", ".rtf": "RTF", ".epub": "EPUB",
+    ".bat": "BAT", ".sh": "SH", ".ps1": "PS1", ".ini": "INI",
+    ".log": "LOG", ".cfg": "CFG", ".toml": "TOML",
 }
+
+# Badge color mapping by category
+EXT_BADGE_CATEGORY = {
+    "doc":   {".pdf", ".docx", ".doc", ".rtf", ".txt", ".md", ".epub", ".rst"},
+    "data":  {".xlsx", ".xls", ".csv", ".json", ".xml", ".yaml", ".yml", ".toml", ".sql", ".db"},
+    "code":  {".py", ".pyw", ".js", ".ts", ".jsx", ".tsx", ".html", ".css", ".java", ".cpp",
+              ".c", ".cs", ".go", ".rs", ".rb", ".php", ".kt", ".scala", ".vue", ".svelte",
+              ".scss", ".less", ".sh", ".bash", ".bat", ".cmd", ".ps1"},
+    "media": {".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".mp4", ".avi", ".mkv",
+              ".mov", ".mp3", ".wav", ".flac"},
+    "arch":  {".zip", ".rar", ".7z", ".tar", ".gz", ".exe", ".msi"},
+}
+
+
+def _get_badge_colors(ext, is_dir, T):
+    if is_dir:
+        return T["badge_orange_bg"], T["badge_orange_text"]
+    for cat, exts in EXT_BADGE_CATEGORY.items():
+        if ext in exts:
+            if cat == "doc":
+                return T["badge_purple_bg"], T["badge_purple_text"]
+            if cat == "data":
+                return T["badge_green_bg"], T["badge_green_text"]
+            if cat == "code":
+                return T["badge_cyan_bg"], T["badge_cyan_text"]
+            if cat == "media":
+                return T["badge_pink_bg"], T["badge_pink_text"]
+            if cat == "arch":
+                return T["badge_orange_bg"], T["badge_orange_text"]
+    return T["badge_purple_bg"], T["badge_purple_text"]
 
 
 def fmt_size(s):
@@ -155,9 +166,9 @@ def fmt_size(s):
         return ""
     for u in ("B", "KB", "MB", "GB", "TB"):
         if s < 1024:
-            return f"{s:.0f} {u}" if u == "B" else f"{s:.1f} {u}"
+            return f"{s:.0f}{u}" if u == "B" else f"{s:.1f}{u}"
         s /= 1024
-    return f"{s:.1f} PB"
+    return f"{s:.1f}PB"
 
 
 def fmt_time(ts):
@@ -166,16 +177,11 @@ def fmt_time(ts):
     try:
         dt = datetime.fromtimestamp(ts)
         d = (datetime.now() - dt).days
-        if d == 0:
-            return f"Today {dt:%H:%M}"
-        if d == 1:
-            return f"Yesterday {dt:%H:%M}"
-        if d < 7:
-            return f"{d}d ago"
-        if d < 30:
-            return f"{d // 7}w ago"
-        if d < 365:
-            return f"{d // 30}mo ago"
+        if d == 0:   return f"Today {dt:%H:%M}"
+        if d == 1:   return "Yesterday"
+        if d < 7:    return f"{d}d ago"
+        if d < 30:   return f"{d//7}w ago"
+        if d < 365:  return f"{d//30}mo ago"
         return f"{dt:%d.%m.%Y}"
     except Exception:
         return ""
@@ -188,7 +194,7 @@ def fmt_time(ts):
 class ResultModel(QAbstractListModel):
     NameRole = Qt.UserRole + 1
     PathRole = Qt.UserRole + 2
-    ExtRole = Qt.UserRole + 3
+    ExtRole  = Qt.UserRole + 3
     SizeRole = Qt.UserRole + 4
     ModifiedRole = Qt.UserRole + 5
     IsDirRole = Qt.UserRole + 6
@@ -230,12 +236,12 @@ class ResultModel(QAbstractListModel):
 
 
 # ══════════════════════════════════════════════════════════════
-#  DELEGATE — Premium card rendering
+#  DELEGATE — Cyberpunk card rendering
 # ══════════════════════════════════════════════════════════════
 
-CARD_HEIGHT = 72
-CARD_MARGIN = 3
-CARD_RADIUS = 14
+CARD_H = 68
+CARD_GAP = 2
+CARD_R = 12
 
 class ResultDelegate(QStyledItemDelegate):
     def __init__(self, theme_getter, parent=None):
@@ -243,56 +249,62 @@ class ResultDelegate(QStyledItemDelegate):
         self._theme = theme_getter
 
     def sizeHint(self, option, index):
-        return QSize(option.rect.width(), CARD_HEIGHT + CARD_MARGIN)
+        return QSize(option.rect.width(), CARD_H + CARD_GAP)
 
     def paint(self, painter, option, index):
         T = self._theme()
         painter.save()
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setRenderHint(QPainter.SmoothPixmapTransform)
 
-        r = option.rect.adjusted(10, CARD_MARGIN, -10, 0)
+        r = QRectF(option.rect).adjusted(12, CARD_GAP, -12, 0)
 
-        is_selected = option.state & QStyle.State_Selected
-        is_hover = option.state & QStyle.State_MouseOver
+        sel = bool(option.state & QStyle.State_Selected)
+        hov = bool(option.state & QStyle.State_MouseOver)
 
-        if is_selected:
-            bg = T["card_selected"]
-            border = T["accent"]
-            border_width = 1.5
-        elif is_hover:
-            bg = T["card_hover"]
-            border = T["card_border_hover"]
-            border_width = 1
+        # ── Card background ──
+        if sel:
+            bg, border, bw = T["card_selected"], T["accent"], 1.5
+        elif hov:
+            bg, border, bw = T["card_hover"], T["card_border_hover"], 1.0
         else:
-            bg = T["card"]
-            border = T["card_border"]
-            border_width = 0.5
+            bg, border, bw = T["card"], T["card_border"], 0.5
 
-        # Card shape
-        path = QPainterPath()
-        path.addRoundedRect(QRectF(r), CARD_RADIUS, CARD_RADIUS)
+        card = QPainterPath()
+        card.addRoundedRect(r, CARD_R, CARD_R)
 
-        # Subtle gradient on card background
-        grad = QLinearGradient(r.x(), r.y(), r.x(), r.y() + r.height())
+        # Fill with subtle gradient
+        grad = QLinearGradient(r.topLeft(), r.bottomRight())
         grad.setColorAt(0, bg)
-        darker = QColor(bg)
-        darker.setAlpha(max(0, bg.alpha() - 8))
-        grad.setColorAt(1, darker)
+        bg2 = QColor(bg)
+        bg2.setRed(min(255, bg.red() + 4))
+        bg2.setBlue(min(255, bg.blue() + 6))
+        grad.setColorAt(1, bg2)
 
-        painter.setPen(QPen(border, border_width))
+        painter.setPen(QPen(border, bw))
         painter.setBrush(QBrush(grad))
-        painter.drawPath(path)
+        painter.drawPath(card)
 
-        # Glow effect on selected
-        if is_selected:
-            glow = QPainterPath()
-            glow.addRoundedRect(QRectF(r).adjusted(-1, -1, 1, 1), CARD_RADIUS + 1, CARD_RADIUS + 1)
-            glow_color = QColor(T["accent"])
-            glow_color.setAlpha(25)
-            painter.setPen(QPen(glow_color, 3))
-            painter.setBrush(Qt.NoBrush)
-            painter.drawPath(glow)
+        # Neon glow on selected
+        if sel:
+            for i, alpha in enumerate([18, 10, 5]):
+                glow_c = QColor(T["accent"])
+                glow_c.setAlpha(alpha)
+                painter.setPen(QPen(glow_c, 2 + i * 2))
+                painter.setBrush(Qt.NoBrush)
+                gp = QPainterPath()
+                gp.addRoundedRect(r.adjusted(-i, -i, i, i), CARD_R + i, CARD_R + i)
+                painter.drawPath(gp)
+
+        # Left accent bar on selected
+        if sel:
+            bar = QPainterPath()
+            bar.addRoundedRect(r.x() + 1, r.y() + 10, 3, r.height() - 20, 1.5, 1.5)
+            painter.setPen(Qt.NoPen)
+            bar_grad = QLinearGradient(0, r.y() + 10, 0, r.y() + r.height() - 10)
+            bar_grad.setColorAt(0, T["accent"])
+            bar_grad.setColorAt(1, T["accent2"])
+            painter.setBrush(QBrush(bar_grad))
+            painter.drawPath(bar)
 
         # Data
         name = index.data(ResultModel.NameRole) or ""
@@ -302,129 +314,219 @@ class ResultDelegate(QStyledItemDelegate):
         modified = index.data(ResultModel.ModifiedRole) or 0
         is_dir = index.data(ResultModel.IsDirRole) or 0
 
-        left_x = r.x() + 18
-        content_top = r.y() + 14
+        lx = r.x() + 16
 
-        # ── Extension badge (left side) ──
-        ext_label = "FOLDER" if is_dir else EXT_LABELS.get(ext, ext.replace(".", "").upper()[:5])
+        # ── Extension badge ──
+        ext_label = "DIR" if is_dir else EXT_LABELS.get(ext, ext.replace(".", "").upper()[:4])
+        badge_bg, badge_text = _get_badge_colors(ext, is_dir, T)
+
         if ext_label:
-            badge_font = QFont("Segoe UI", 7, QFont.Bold)
-            bfm = QFontMetrics(badge_font)
-            bw = max(bfm.horizontalAdvance(ext_label) + 14, 38)
-            bh = 22
-            bx = left_x
-            by = r.y() + (r.height() - bh) // 2
+            bf = QFont("Consolas", 7, QFont.Bold)
+            bfm = QFontMetrics(bf)
+            bw_px = max(bfm.horizontalAdvance(ext_label) + 12, 36)
+            bh_px = 20
+            bx = lx
+            by = r.y() + (r.height() - bh_px) / 2
 
-            if is_dir:
-                badge_bg = T["badge_orange_bg"]
-                badge_text = T["badge_orange_text"]
-            elif ext in (".pdf", ".docx", ".doc", ".rtf"):
-                badge_bg = T["badge_bg"]
-                badge_text = T["badge_text"]
-            elif ext in (".xlsx", ".xls", ".csv"):
-                badge_bg = T["badge_green_bg"]
-                badge_text = T["badge_green_text"]
-            elif ext in (".py", ".js", ".ts", ".java", ".cpp", ".c", ".cs", ".go", ".rs"):
-                badge_bg = T["badge_blue_bg"]
-                badge_text = T["badge_blue_text"]
-            else:
-                badge_bg = T["badge_bg"]
-                badge_text = T["badge_text"]
-
-            badge_path = QPainterPath()
-            badge_path.addRoundedRect(bx, by, bw, bh, 6, 6)
+            bp = QPainterPath()
+            bp.addRoundedRect(bx, by, bw_px, bh_px, 4, 4)
             painter.setPen(Qt.NoPen)
             painter.setBrush(QBrush(badge_bg))
-            painter.drawPath(badge_path)
+            painter.drawPath(bp)
 
-            painter.setFont(badge_font)
+            painter.setFont(bf)
             painter.setPen(QPen(badge_text))
-            painter.drawText(QRect(int(bx), int(by), int(bw), int(bh)), Qt.AlignCenter, ext_label)
+            painter.drawText(QRectF(bx, by, bw_px, bh_px), Qt.AlignCenter, ext_label)
 
-            text_left = int(bx + bw + 14)
+            tx = bx + bw_px + 14
         else:
-            text_left = left_x + 8
+            tx = lx + 8
 
-        # ── File name ──
-        name_font = QFont("Segoe UI", 11)
-        name_font.setWeight(QFont.DemiBold)
-        painter.setFont(name_font)
+        # ── Name (Segoe UI Semibold) ──
+        nf = QFont("Segoe UI", 11, QFont.DemiBold)
+        painter.setFont(nf)
         painter.setPen(QPen(T["text"]))
-        name_rect = QRect(text_left, int(content_top), r.width() - (text_left - r.x()) - 170, 22)
-        fm = QFontMetrics(name_font)
-        elided_name = fm.elidedText(name, Qt.ElideRight, name_rect.width())
-        painter.drawText(name_rect, Qt.AlignLeft | Qt.AlignVCenter, elided_name)
+        max_w = r.width() - (tx - r.x()) - 140
+        nr = QRectF(tx, r.y() + 13, max_w, 22)
+        en = QFontMetrics(nf).elidedText(name, Qt.ElideRight, int(max_w))
+        painter.drawText(nr, Qt.AlignLeft | Qt.AlignVCenter, en)
 
-        # ── Path ──
-        dir_path = os.path.dirname(fpath)
-        path_font = QFont("Segoe UI", 8)
-        painter.setFont(path_font)
+        # ── Path (monospace for tech feel) ──
+        pf = QFont("Consolas", 8)
+        painter.setFont(pf)
         painter.setPen(QPen(T["text_muted"]))
-        path_rect = QRect(text_left, int(content_top + 24), r.width() - (text_left - r.x()) - 170, 18)
-        pfm = QFontMetrics(path_font)
-        elided_path = pfm.elidedText(dir_path, Qt.ElideMiddle, path_rect.width())
-        painter.drawText(path_rect, Qt.AlignLeft | Qt.AlignVCenter, elided_path)
+        dp = os.path.dirname(fpath)
+        pr = QRectF(tx, r.y() + 37, max_w, 18)
+        ep = QFontMetrics(pf).elidedText(dp, Qt.ElideMiddle, int(max_w))
+        painter.drawText(pr, Qt.AlignLeft | Qt.AlignVCenter, ep)
 
-        # ── Right side: Size ──
-        right_x = r.x() + r.width() - 155
-
-        sz_text = fmt_size(size)
-        if sz_text and not is_dir:
-            size_font = QFont("Segoe UI", 9, QFont.Medium)
-            painter.setFont(size_font)
+        # ── Right: size with monospace ──
+        rx = r.x() + r.width() - 130
+        sz = fmt_size(size)
+        if sz and not is_dir:
+            sf = QFont("Consolas", 9, QFont.Medium)
+            painter.setFont(sf)
             painter.setPen(QPen(T["text_sec"]))
-            size_rect = QRect(right_x, int(content_top), 140, 20)
-            painter.drawText(size_rect, Qt.AlignRight | Qt.AlignVCenter, sz_text)
+            painter.drawText(QRectF(rx, r.y() + 14, 120, 20), Qt.AlignRight | Qt.AlignVCenter, sz)
 
-        # ── Right side: Time ──
-        tm_text = fmt_time(modified)
-        if tm_text:
-            time_font = QFont("Segoe UI", 8)
-            painter.setFont(time_font)
+        # ── Right: time ──
+        tm = fmt_time(modified)
+        if tm:
+            tf = QFont("Consolas", 8)
+            painter.setFont(tf)
             painter.setPen(QPen(T["text_muted"]))
-            time_rect = QRect(right_x, int(content_top + 24), 140, 18)
-            painter.drawText(time_rect, Qt.AlignRight | Qt.AlignVCenter, tm_text)
+            painter.drawText(QRectF(rx, r.y() + 36, 120, 18), Qt.AlignRight | Qt.AlignVCenter, tm)
 
         painter.restore()
 
 
 # ══════════════════════════════════════════════════════════════
-#  ANIMATED GLOW WIDGET
+#  TECH BACKGROUND — Grid + floating orbs
 # ══════════════════════════════════════════════════════════════
 
-class GlowWidget(QWidget):
-    """Subtle animated background glow."""
+class TechBackground(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._phase = 0
+        self._tick = 0
+        self._theme_colors = THEMES["dark"]
         self._timer = QTimer(self)
-        self._timer.timeout.connect(self._tick)
-        self._timer.start(50)
+        self._timer.timeout.connect(self._animate)
+        self._timer.start(40)
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
 
-    def _tick(self):
-        self._phase = (self._phase + 1) % 360
+    def set_theme(self, T):
+        self._theme_colors = T
+        self.update()
+
+    def _animate(self):
+        self._tick += 1
         self.update()
 
     def paintEvent(self, event):
-        if not self.parent():
-            return
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        w, h = self.width(), self.height()
 
-        import math
-        cx = self.width() * 0.5 + math.sin(math.radians(self._phase)) * 60
-        cy = self.height() * 0.3 + math.cos(math.radians(self._phase * 0.7)) * 30
+        T = self._theme_colors
 
-        grad = QRadialGradient(cx, cy, self.width() * 0.5)
-        grad.setColorAt(0, QColor(120, 80, 255, 12))
-        grad.setColorAt(0.5, QColor(200, 80, 255, 6))
-        grad.setColorAt(1, QColor(0, 0, 0, 0))
+        # ── Subtle grid lines (hidden in light theme via alpha 0) ──
+        grid_c = T["grid_line"]
+        if grid_c.alpha() > 0:
+            p.setPen(QPen(grid_c, 0.5))
+            spacing = 48
+            for x in range(0, w, spacing):
+                p.drawLine(x, 0, x, h)
+            for y in range(0, h, spacing):
+                p.drawLine(0, y, w, y)
 
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QBrush(grad))
-        painter.drawRect(self.rect())
-        painter.end()
+        # ── Floating orbs ──
+        t = self._tick * 0.02
+        orbs = [
+            (0.3 + math.sin(t * 0.7) * 0.15, 0.25 + math.cos(t * 0.5) * 0.1, w * 0.35, T["glow1"]),
+            (0.7 + math.sin(t * 0.5 + 2) * 0.12, 0.6 + math.cos(t * 0.8 + 1) * 0.15, w * 0.28, T["glow2"]),
+            (0.5 + math.cos(t * 0.6 + 4) * 0.2, 0.8 + math.sin(t * 0.4 + 3) * 0.1, w * 0.22, T["glow3"]),
+        ]
+        for ox, oy, radius, color in orbs:
+            cx, cy = ox * w, oy * h
+            grad = QRadialGradient(cx, cy, radius)
+            grad.setColorAt(0, color)
+            grad.setColorAt(1, QColor(0, 0, 0, 0))
+            p.setPen(Qt.NoPen)
+            p.setBrush(QBrush(grad))
+            p.drawEllipse(QPointF(cx, cy), radius, radius)
+
+        # ── Scan line effect ──
+        scan_y = (self._tick * 2) % (h + 60) - 30
+        scan_grad = QLinearGradient(0, scan_y - 30, 0, scan_y + 30)
+        scan_grad.setColorAt(0, QColor(0, 0, 0, 0))
+        scan_grad.setColorAt(0.5, QColor(100, 60, 255, 8))
+        scan_grad.setColorAt(1, QColor(0, 0, 0, 0))
+        p.setBrush(QBrush(scan_grad))
+        p.drawRect(0, int(scan_y - 30), w, 60)
+
+        p.end()
+
+
+# ══════════════════════════════════════════════════════════════
+#  NEON SEARCH BAR
+# ══════════════════════════════════════════════════════════════
+
+class NeonSearchBar(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._focused = False
+        self._glow_alpha = 0
+        self._theme_colors = THEMES["dark"]
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._animate_glow)
+        self._timer.start(30)
+
+    def set_focused(self, focused):
+        self._focused = focused
+        self.update()
+
+    def set_theme(self, T):
+        self._theme_colors = T
+        self.update()
+
+    def _animate_glow(self):
+        target = 255 if self._focused else 0
+        diff = target - self._glow_alpha
+        if abs(diff) > 2:
+            self._glow_alpha += diff * 0.15
+            self.update()
+        elif self._glow_alpha != target:
+            self._glow_alpha = target
+            self.update()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        r = QRectF(self.rect()).adjusted(4, 4, -4, -4)
+
+        T = self._theme_colors
+
+        # Glow when focused
+        if self._glow_alpha > 5:
+            alpha_ratio = self._glow_alpha / 255.0
+            for i in range(3):
+                gc = QColor(T["accent"])
+                gc.setAlpha(int(12 * alpha_ratio * (3 - i)))
+                gp = QPainterPath()
+                gp.addRoundedRect(r.adjusted(-i * 3, -i * 3, i * 3, i * 3), 18 + i, 18 + i)
+                p.setPen(QPen(gc, 2))
+                p.setBrush(Qt.NoBrush)
+                p.drawPath(gp)
+
+        # Main bar
+        bar = QPainterPath()
+        bar.addRoundedRect(r, 16, 16)
+        p.setPen(QPen(T["search_focus"] if self._focused else T["search_border"], 1.5))
+        p.setBrush(QBrush(T["search_bg"]))
+        p.drawPath(bar)
+
+        # Gradient top border accent
+        if self._glow_alpha > 5:
+            alpha_ratio = self._glow_alpha / 255.0
+            accent_grad = QLinearGradient(r.x(), r.y(), r.x() + r.width(), r.y())
+            c1 = QColor(T["accent"])
+            c1.setAlpha(int(150 * alpha_ratio))
+            c2 = QColor(T["accent2"])
+            c2.setAlpha(int(100 * alpha_ratio))
+            c3 = QColor(T["accent3"])
+            c3.setAlpha(int(80 * alpha_ratio))
+            accent_grad.setColorAt(0, c1)
+            accent_grad.setColorAt(0.5, c2)
+            accent_grad.setColorAt(1, c3)
+            p.setPen(QPen(QBrush(accent_grad), 2))
+            p.setBrush(Qt.NoBrush)
+            # Only top arc
+            top_path = QPainterPath()
+            top_path.moveTo(r.x() + 16, r.y())
+            top_path.lineTo(r.x() + r.width() - 16, r.y())
+            p.drawPath(top_path)
+
+        p.end()
 
 
 # ══════════════════════════════════════════════════════════════
@@ -466,6 +568,7 @@ class QuickFindWindow(QMainWindow):
         super().__init__()
         self.is_dark = True
         self.T = THEMES["dark"]
+        self._theme_colors = self.T
         self._indexer_thread = None
         self._file_watcher = None
 
@@ -473,8 +576,8 @@ class QuickFindWindow(QMainWindow):
         self.db = FileDatabase()
 
         self.setWindowTitle("QuickFind")
-        self.setMinimumSize(720, 520)
-        self.resize(900, 700)
+        self.setMinimumSize(750, 540)
+        self.resize(920, 720)
 
         ico = os.path.join(SCRIPT_DIR, "quickfind.ico")
         if os.path.exists(ico):
@@ -496,128 +599,127 @@ class QuickFindWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # ── Background glow ──
-        self._glow = GlowWidget(central)
-        self._glow.setGeometry(0, 0, 900, 700)
+        # ── Tech background ──
+        self._bg = TechBackground(central)
+        self._bg.setGeometry(0, 0, 920, 720)
 
         # ── Header ──
         self.header = QWidget()
-        self.header.setFixedHeight(76)
-        h_layout = QHBoxLayout(self.header)
-        h_layout.setContentsMargins(28, 0, 24, 0)
+        self.header.setFixedHeight(72)
+        hl = QHBoxLayout(self.header)
+        hl.setContentsMargins(28, 0, 22, 0)
 
-        # Logo with gradient text effect
-        logo_container = QWidget()
-        logo_layout = QHBoxLayout(logo_container)
-        logo_layout.setContentsMargins(0, 0, 0, 0)
-        logo_layout.setSpacing(14)
+        # Logo
+        self.logo = QLabel("⚡")
+        self.logo.setFont(QFont("Segoe UI Emoji", 24))
+        self.logo.setFixedSize(44, 44)
+        self.logo.setAlignment(Qt.AlignCenter)
 
-        self.logo_icon = QLabel()
-        self.logo_icon.setFixedSize(42, 42)
+        # Title
+        tw = QWidget()
+        tl = QVBoxLayout(tw)
+        tl.setContentsMargins(12, 0, 0, 0)
+        tl.setSpacing(0)
+        self.title_label = QLabel("QUICKFIND")
+        self.title_label.setFont(QFont("Consolas", 20, QFont.Bold))
+        self.subtitle_label = QLabel("// ultra-fast file search engine")
+        self.subtitle_label.setFont(QFont("Consolas", 8))
+        tl.addStretch()
+        tl.addWidget(self.title_label)
+        tl.addWidget(self.subtitle_label)
+        tl.addStretch()
 
-        title_widget = QWidget()
-        title_layout = QVBoxLayout(title_widget)
-        title_layout.setContentsMargins(0, 0, 0, 0)
-        title_layout.setSpacing(1)
+        hl.addWidget(self.logo)
+        hl.addWidget(tw)
+        hl.addStretch()
 
-        self.title_label = QLabel("QuickFind")
-        self.title_label.setFont(QFont("Segoe UI", 20, QFont.Bold))
+        # Format indicator
+        self.formats_label = QLabel("40+ FORMATS")
+        self.formats_label.setFont(QFont("Consolas", 7, QFont.Bold))
+        self.formats_label.setFixedHeight(26)
 
-        self.subtitle_label = QLabel("Search everything, instantly")
-        self.subtitle_label.setFont(QFont("Segoe UI", 9))
-
-        title_layout.addStretch()
-        title_layout.addWidget(self.title_label)
-        title_layout.addWidget(self.subtitle_label)
-        title_layout.addStretch()
-
-        logo_layout.addWidget(self.logo_icon)
-        logo_layout.addWidget(title_widget)
-
-        h_layout.addWidget(logo_container)
-        h_layout.addStretch()
-
-        # Supported formats indicator
-        self.formats_label = QLabel("PDF  DOCX  XLSX  PPTX  EPUB  +35")
-        self.formats_label.setFont(QFont("Segoe UI", 7, QFont.Medium))
-
-        h_layout.addWidget(self.formats_label)
-        h_layout.addSpacing(16)
+        hl.addWidget(self.formats_label)
+        hl.addSpacing(10)
 
         # Theme toggle
-        self.theme_btn = QPushButton()
-        self.theme_btn.setFixedSize(42, 42)
+        self.theme_btn = QPushButton("☀")
+        self.theme_btn.setFont(QFont("Segoe UI Emoji", 15))
+        self.theme_btn.setFixedSize(40, 40)
         self.theme_btn.setCursor(QCursor(Qt.PointingHandCursor))
         self.theme_btn.clicked.connect(self._toggle_theme)
 
-        # Reindex button
-        self.reindex_btn = QPushButton("Reindex")
-        self.reindex_btn.setFont(QFont("Segoe UI", 10, QFont.DemiBold))
-        self.reindex_btn.setFixedHeight(42)
+        # Reindex
+        self.reindex_btn = QPushButton("⟳  REINDEX")
+        self.reindex_btn.setFont(QFont("Consolas", 9, QFont.Bold))
+        self.reindex_btn.setFixedHeight(40)
         self.reindex_btn.setCursor(QCursor(Qt.PointingHandCursor))
         self.reindex_btn.clicked.connect(self._reindex)
 
-        h_layout.addWidget(self.theme_btn)
-        h_layout.addSpacing(8)
-        h_layout.addWidget(self.reindex_btn)
-
+        hl.addWidget(self.theme_btn)
+        hl.addSpacing(8)
+        hl.addWidget(self.reindex_btn)
         layout.addWidget(self.header)
 
-        # ── Divider with gradient ──
+        # ── Gradient divider ──
         self.divider = QFrame()
-        self.divider.setFixedHeight(1)
+        self.divider.setFixedHeight(2)
         layout.addWidget(self.divider)
 
-        # ── Search Bar ──
-        search_container = QWidget()
-        sc_layout = QHBoxLayout(search_container)
-        sc_layout.setContentsMargins(28, 20, 28, 8)
+        # ── Search area ──
+        search_area = QWidget()
+        sa_layout = QVBoxLayout(search_area)
+        sa_layout.setContentsMargins(28, 18, 28, 6)
+        sa_layout.setSpacing(6)
 
-        self.search_wrapper = QWidget()
-        self.search_wrapper.setFixedHeight(56)
-        sw_layout = QHBoxLayout(self.search_wrapper)
-        sw_layout.setContentsMargins(20, 0, 20, 0)
-        sw_layout.setSpacing(12)
+        # Neon search bar
+        self.search_neon = NeonSearchBar(central)
+        self.search_neon.setFixedHeight(64)
+        search_inner = QHBoxLayout(self.search_neon)
+        search_inner.setContentsMargins(24, 4, 24, 4)
+        search_inner.setSpacing(12)
 
-        self.search_icon = QLabel()
-        self.search_icon.setFixedWidth(24)
-        self.search_icon.setFont(QFont("Segoe UI", 16))
+        self.search_prefix = QLabel("›")
+        self.search_prefix.setFont(QFont("Consolas", 22, QFont.Bold))
+        self.search_prefix.setFixedWidth(20)
 
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Search files, contents, documents...")
-        self.search_input.setFont(QFont("Segoe UI", 14))
+        self.search_input.setPlaceholderText("search files, contents, documents...")
+        self.search_input.setFont(QFont("Consolas", 14))
         self.search_input.setFrame(False)
         self.search_input.returnPressed.connect(self._do_search)
+        self.search_input.focusInEvent = self._on_search_focus_in
+        self.search_input.focusOutEvent = self._on_search_focus_out
+        self._original_focus_in = QLineEdit.focusInEvent
+        self._original_focus_out = QLineEdit.focusOutEvent
 
-        self.shortcut_hint = QLabel("Enter  |  Ctrl+O folder  |  Esc clear")
-        self.shortcut_hint.setFont(QFont("Segoe UI", 8))
+        self.shortcut_label = QLabel("ENTER")
+        self.shortcut_label.setFont(QFont("Consolas", 7, QFont.Bold))
+        self.shortcut_label.setFixedHeight(22)
 
-        sw_layout.addWidget(self.search_icon)
-        sw_layout.addWidget(self.search_input)
-        sw_layout.addWidget(self.shortcut_hint)
+        search_inner.addWidget(self.search_prefix)
+        search_inner.addWidget(self.search_input)
+        search_inner.addWidget(self.shortcut_label)
 
-        sc_layout.addWidget(self.search_wrapper)
-        layout.addWidget(search_container)
+        sa_layout.addWidget(self.search_neon)
 
-        # ── Stats bar ──
-        stats_widget = QWidget()
-        stats_layout = QHBoxLayout(stats_widget)
-        stats_layout.setContentsMargins(34, 2, 34, 6)
-
+        # Stats row
+        stats = QWidget()
+        stats_l = QHBoxLayout(stats)
+        stats_l.setContentsMargins(6, 0, 6, 0)
         self.result_count_label = QLabel("")
-        self.result_count_label.setFont(QFont("Segoe UI", 9, QFont.Medium))
+        self.result_count_label.setFont(QFont("Consolas", 9, QFont.Medium))
         self.search_time_label = QLabel("")
-        self.search_time_label.setFont(QFont("Segoe UI", 9))
+        self.search_time_label.setFont(QFont("Consolas", 9))
+        stats_l.addWidget(self.result_count_label)
+        stats_l.addStretch()
+        stats_l.addWidget(self.search_time_label)
+        sa_layout.addWidget(stats)
 
-        stats_layout.addWidget(self.result_count_label)
-        stats_layout.addStretch()
-        stats_layout.addWidget(self.search_time_label)
-        layout.addWidget(stats_widget)
+        layout.addWidget(search_area)
 
-        # ── Results List ──
+        # ── Results list ──
         self.model = ResultModel()
         self.delegate = ResultDelegate(self._get_theme)
-
         self.list_view = QListView()
         self.list_view.setModel(self.model)
         self.list_view.setItemDelegate(self.delegate)
@@ -628,331 +730,276 @@ class QuickFindWindow(QMainWindow):
         self.list_view.setFrameShape(QListView.NoFrame)
         self.list_view.doubleClicked.connect(self._on_double_click)
         self.list_view.setUniformItemSizes(True)
-
         layout.addWidget(self.list_view)
 
-        # ── Empty State ──
+        # ── Empty state ──
         self.empty_widget = QWidget()
-        empty_layout = QVBoxLayout(self.empty_widget)
-        empty_layout.setAlignment(Qt.AlignCenter)
-        empty_layout.setSpacing(8)
+        el = QVBoxLayout(self.empty_widget)
+        el.setAlignment(Qt.AlignCenter)
+        el.setSpacing(6)
 
-        self.empty_icon = QLabel()
-        self.empty_icon.setFont(QFont("Segoe UI", 48))
+        self.empty_icon = QLabel("⚡")
+        self.empty_icon.setFont(QFont("Segoe UI Emoji", 44))
         self.empty_icon.setAlignment(Qt.AlignCenter)
 
-        self.empty_title = QLabel("Search your files")
-        self.empty_title.setFont(QFont("Segoe UI", 18, QFont.DemiBold))
+        self.empty_title = QLabel("READY TO SEARCH")
+        self.empty_title.setFont(QFont("Consolas", 18, QFont.Bold))
         self.empty_title.setAlignment(Qt.AlignCenter)
 
-        self.empty_sub = QLabel("Type a file name, extension, or search inside documents\nSupports PDF, DOCX, XLSX, PPTX, EPUB, RTF and 35+ text formats")
-        self.empty_sub.setFont(QFont("Segoe UI", 10))
+        self.empty_sub = QLabel("// type a query and press ENTER\n// searches file names + document contents")
+        self.empty_sub.setFont(QFont("Consolas", 9))
         self.empty_sub.setAlignment(Qt.AlignCenter)
 
-        # Format badges
-        formats_row = QWidget()
-        fr_layout = QHBoxLayout(formats_row)
-        fr_layout.setAlignment(Qt.AlignCenter)
-        fr_layout.setSpacing(6)
-        self._format_badges = []
-        for fmt in ["PDF", "DOCX", "XLSX", "PPTX", "EPUB", "RTF", "PY", "JS", "+"]:
-            badge = QLabel(fmt)
-            badge.setFont(QFont("Segoe UI", 8, QFont.Bold))
-            badge.setFixedHeight(26)
-            badge.setMinimumWidth(42)
-            badge.setAlignment(Qt.AlignCenter)
-            fr_layout.addWidget(badge)
-            self._format_badges.append(badge)
+        # Format chips
+        chips_row = QWidget()
+        cr_layout = QHBoxLayout(chips_row)
+        cr_layout.setAlignment(Qt.AlignCenter)
+        cr_layout.setSpacing(5)
+        self._chips = []
+        for fmt in ["PDF", "DOCX", "XLSX", "PPTX", "EPUB", "RTF", "PY", "JS", "SQL", "+30"]:
+            chip = QLabel(fmt)
+            chip.setFont(QFont("Consolas", 7, QFont.Bold))
+            chip.setFixedHeight(24)
+            chip.setMinimumWidth(38)
+            chip.setAlignment(Qt.AlignCenter)
+            cr_layout.addWidget(chip)
+            self._chips.append(chip)
 
-        empty_layout.addWidget(self.empty_icon)
-        empty_layout.addSpacing(6)
-        empty_layout.addWidget(self.empty_title)
-        empty_layout.addWidget(self.empty_sub)
-        empty_layout.addSpacing(12)
-        empty_layout.addWidget(formats_row)
-
+        el.addWidget(self.empty_icon)
+        el.addSpacing(4)
+        el.addWidget(self.empty_title)
+        el.addWidget(self.empty_sub)
+        el.addSpacing(14)
+        el.addWidget(chips_row)
         layout.addWidget(self.empty_widget)
 
-        # ── Status Bar ──
+        # ── Status bar ──
         self.status_bar = QStatusBar()
-        self.status_bar.setFont(QFont("Segoe UI", 9))
-        self.status_bar.setFixedHeight(34)
+        self.status_bar.setFont(QFont("Consolas", 8))
+        self.status_bar.setFixedHeight(30)
         self.setStatusBar(self.status_bar)
 
-        self.status_label = QLabel("Starting...")
+        self.status_label = QLabel("// initializing...")
         self.idx_count_label = QLabel("")
         from database import DB_DIR
-        self.db_path_label = QLabel(f"Index: {DB_DIR}")
-        self.db_path_label.setFont(QFont("Segoe UI", 8))
+        self.db_path_label = QLabel(f"IDX: {DB_DIR}")
+        self.db_path_label.setFont(QFont("Consolas", 7))
         self.status_bar.addWidget(self.status_label, 1)
         self.status_bar.addPermanentWidget(self.db_path_label)
         self.status_bar.addPermanentWidget(self.idx_count_label)
 
-        # Initial state
         self.list_view.hide()
         self.empty_widget.show()
         self.search_input.setFocus()
 
-        # Shortcuts
-        from PySide6.QtGui import QShortcut, QKeySequence
-        QShortcut(QKeySequence("Return"), self, self._open_selected)
+        # Shortcuts — NO Return shortcut (it conflicts with search input)
         QShortcut(QKeySequence("Ctrl+O"), self, self._open_in_folder)
         QShortcut(QKeySequence("Escape"), self, self._clear_search)
         QShortcut(QKeySequence("Ctrl+R"), self, self._reindex)
         QShortcut(QKeySequence("Ctrl+L"), self, self._focus_search)
         QShortcut(QKeySequence("Ctrl+D"), self, self._toggle_theme)
 
+    def _on_search_focus_in(self, event):
+        self.search_neon.set_focused(True)
+        self._original_focus_in(self.search_input, event)
+
+    def _on_search_focus_out(self, event):
+        self.search_neon.set_focused(False)
+        self._original_focus_out(self.search_input, event)
+
     # ─── Theme ────────────────────────────────────────────
 
     def _apply_theme(self):
         T = self.T
-        is_dark = self.is_dark
+        self._theme_colors = T
+        dk = self.is_dark
 
         bg = T["bg"].name()
         surface = T["surface"].name()
-        surface_el = T["surface_elevated"].name()
         accent = T["accent"].name()
-        accent_sec = T["accent_secondary"].name()
-        accent_hover = T["accent_hover"].name()
+        accent2 = T["accent2"].name()
+        accent3 = T["accent3"].name()
+        accent_h = T["accent_hover"].name()
         text = T["text"].name()
         text_sec = T["text_sec"].name()
-        text_muted = T["text_muted"].name()
+        text_m = T["text_muted"].name()
         divider = T["divider"].name()
-        search_bg = T["search_bg"].name()
-        search_border = T["search_border"].name()
-        search_focus = T["search_focus"].name()
-        scrollbar = T["scrollbar"].name()
-        scrollbar_hover = T["scrollbar_hover"].name()
-        badge_bg = T["badge_bg"].name()
-        badge_text = T["badge_text"].name()
+        sb = T["scrollbar"].name()
+        sb_h = T["scrollbar_hover"].name()
+        s_border = T["search_border"].name()
+        badge_p_bg = T["badge_purple_bg"].name()
+        badge_p_t = T["badge_purple_text"].name()
+        badge_c_bg = T["badge_cyan_bg"].name()
+        badge_c_t = T["badge_cyan_text"].name()
 
         self.setStyleSheet(f"""
-            QMainWindow {{
-                background-color: {bg};
-            }}
+            QMainWindow {{ background-color: {bg}; }}
 
-            #header {{
-                background-color: {surface};
-            }}
+            #header {{ background: transparent; }}
 
             #divider {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 {divider}, stop:0.3 {accent}, stop:0.7 {accent_sec}, stop:1 {divider});
-            }}
-
-            #search_wrapper {{
-                background-color: {search_bg};
-                border: 1.5px solid {search_border};
-                border-radius: 16px;
-            }}
-            #search_wrapper:focus-within {{
-                border: 2px solid {search_focus};
+                    stop:0 transparent, stop:0.15 {accent}, stop:0.5 {accent2}, stop:0.85 {accent3}, stop:1 transparent);
             }}
 
             QLineEdit {{
                 background: transparent;
                 color: {text};
                 border: none;
-                padding: 10px 4px;
+                padding: 8px 0px;
                 selection-background-color: {accent};
+                selection-color: white;
             }}
-            QLineEdit::placeholder {{
-                color: {text_muted};
+            QLineEdit::placeholder {{ color: {text_m}; }}
+
+            #search_neon {{
+                background: transparent;
+                border: none;
             }}
 
             QListView {{
-                background-color: {bg};
+                background-color: transparent;
                 border: none;
                 outline: none;
             }}
-            QListView::item {{
-                border: none;
-                padding: 0px;
-            }}
-            QListView::item:selected, QListView::item:hover {{
-                background: transparent;
-            }}
+            QListView::item {{ border: none; padding: 0px; }}
+            QListView::item:selected, QListView::item:hover {{ background: transparent; }}
 
             QScrollBar:vertical {{
                 background: transparent;
-                width: 6px;
-                margin: 8px 2px;
+                width: 5px;
+                margin: 10px 1px;
                 border: none;
             }}
             QScrollBar::handle:vertical {{
-                background: {scrollbar};
+                background: {sb};
                 min-height: 40px;
-                border-radius: 3px;
+                border-radius: 2px;
             }}
             QScrollBar::handle:vertical:hover {{
-                background: {scrollbar_hover};
-                width: 8px;
+                background: {sb_h};
             }}
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-                height: 0px;
-            }}
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
-                background: transparent;
-            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
 
             QStatusBar {{
                 background-color: {surface};
-                color: {text_muted};
+                color: {text_m};
                 border-top: 1px solid {divider};
             }}
 
             #theme_btn {{
-                background-color: {badge_bg};
-                border: 1.5px solid {search_border};
-                border-radius: 12px;
-                font-size: 18px;
+                background: {badge_p_bg};
+                border: 1px solid {s_border};
+                border-radius: 10px;
             }}
             #theme_btn:hover {{
-                background-color: {surface_el};
                 border-color: {accent};
             }}
 
             #reindex_btn {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 {accent}, stop:1 {accent_sec});
+                    stop:0 {accent}, stop:1 {accent2});
                 color: white;
                 border: none;
-                border-radius: 12px;
-                padding: 0 22px;
-                font-weight: 600;
+                border-radius: 10px;
+                padding: 0 20px;
             }}
             #reindex_btn:hover {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 {accent_hover}, stop:1 {accent_sec});
+                    stop:0 {accent_h}, stop:1 {accent2});
             }}
 
-            QLabel {{
-                color: {text};
-                background: transparent;
-            }}
-            #subtitle {{
-                color: {text_muted};
-            }}
-            #title_label {{
-                color: {text};
-            }}
             #formats_label {{
-                color: {text_muted};
-                padding: 4px 10px;
-                background: {badge_bg};
-                border-radius: 8px;
+                color: {accent2};
+                background: {badge_c_bg};
+                border: 1px solid {badge_c_bg};
+                border-radius: 6px;
+                padding: 3px 10px;
             }}
-            #shortcut_hint {{
-                color: {text_muted};
+
+            QLabel {{ color: {text}; background: transparent; }}
+            #title_label {{ color: {text}; }}
+            #subtitle {{ color: {text_m}; }}
+            #search_prefix {{ color: {accent}; }}
+            #shortcut_label {{
+                color: {badge_c_t};
+                background: {badge_c_bg};
+                border-radius: 4px;
+                padding: 2px 8px;
             }}
-            #result_count {{
-                color: {accent};
-            }}
-            #search_time {{
-                color: {text_muted};
-            }}
-            #empty_icon {{
-                color: {accent};
-            }}
-            #empty_title {{
-                color: {text};
-            }}
-            #empty_sub {{
-                color: {text_muted};
-            }}
-            #status_label {{
-                color: {text_muted};
-            }}
-            #idx_count {{
-                color: {text_muted};
-            }}
-            #db_path {{
-                color: {text_muted};
-                padding-right: 12px;
-            }}
+            #result_count {{ color: {accent}; }}
+            #search_time {{ color: {text_m}; }}
+            #empty_icon {{ color: {accent}; }}
+            #empty_title {{ color: {text}; }}
+            #empty_sub {{ color: {text_m}; }}
+            #status_label {{ color: {text_m}; }}
+            #idx_count {{ color: {text_m}; }}
+            #db_path {{ color: {text_m}; padding-right: 12px; }}
         """)
 
-        # Object names
-        self.header.setObjectName("header")
-        self.divider.setObjectName("divider")
-        self.search_wrapper.setObjectName("search_wrapper")
-        self.theme_btn.setObjectName("theme_btn")
-        self.reindex_btn.setObjectName("reindex_btn")
-        self.title_label.setObjectName("title_label")
-        self.subtitle_label.setObjectName("subtitle")
-        self.formats_label.setObjectName("formats_label")
-        self.shortcut_hint.setObjectName("shortcut_hint")
-        self.result_count_label.setObjectName("result_count")
-        self.search_time_label.setObjectName("search_time")
-        self.empty_icon.setObjectName("empty_icon")
-        self.empty_title.setObjectName("empty_title")
-        self.empty_sub.setObjectName("empty_sub")
-        self.status_label.setObjectName("status_label")
-        self.idx_count_label.setObjectName("idx_count")
-        self.db_path_label.setObjectName("db_path")
+        # Set object names
+        for w, n in [
+            (self.header, "header"), (self.divider, "divider"),
+            (self.theme_btn, "theme_btn"), (self.reindex_btn, "reindex_btn"),
+            (self.title_label, "title_label"), (self.subtitle_label, "subtitle"),
+            (self.formats_label, "formats_label"), (self.search_prefix, "search_prefix"),
+            (self.search_neon, "search_neon"),
+            (self.shortcut_label, "shortcut_label"),
+            (self.result_count_label, "result_count"), (self.search_time_label, "search_time"),
+            (self.empty_icon, "empty_icon"), (self.empty_title, "empty_title"),
+            (self.empty_sub, "empty_sub"), (self.status_label, "status_label"),
+            (self.idx_count_label, "idx_count"), (self.db_path_label, "db_path"),
+        ]:
+            w.setObjectName(n)
 
-        # Dynamic content
-        self.theme_btn.setText("☀" if is_dark else "🌙")
-        self.search_icon.setText("🔍")
-        self.empty_icon.setText("⚡")
-        self.logo_icon.setText("⚡")
-        self.logo_icon.setFont(QFont("Segoe UI Emoji", 22))
-        self.logo_icon.setAlignment(Qt.AlignCenter)
+        self.theme_btn.setText("☀" if dk else "🌙")
 
-        # Format badges styling
-        for badge in self._format_badges:
-            badge.setStyleSheet(f"""
-                background-color: {badge_bg};
-                color: {badge_text};
-                border-radius: 6px;
-                padding: 2px 8px;
-            """)
+        # Update child widget themes
+        self.search_neon.set_theme(T)
+        self._bg.set_theme(T)
+
+        # Chip styling
+        for i, chip in enumerate(self._chips):
+            if i < 3:
+                cbg, ct = badge_p_bg, badge_p_t
+            elif i < 6:
+                cbg, ct = badge_c_bg, badge_c_t
+            else:
+                cbg, ct = T["badge_green_bg"].name(), T["badge_green_text"].name()
+            chip.setStyleSheet(f"background:{cbg}; color:{ct}; border-radius:5px; padding:2px 6px;")
 
         self.list_view.viewport().update()
 
     def _toggle_theme(self):
         self.is_dark = not self.is_dark
         self.T = THEMES["dark" if self.is_dark else "light"]
+        self._theme_colors = self.T
         self._apply_theme()
         self._apply_win_effects()
 
     def _apply_win_effects(self):
         try:
             hwnd = int(self.winId())
-            DWMWA_USE_IMMERSIVE_DARK_MODE = 20
-            value = ctypes.c_int(1 if self.is_dark else 0)
-            ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE,
-                ctypes.byref(value), ctypes.sizeof(value)
-            )
-            # Mica/acrylic effect on Windows 11
-            DWMWA_SYSTEMBACKDROP_TYPE = 38
-            backdrop = ctypes.c_int(2)  # Mica
-            ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                hwnd, DWMWA_SYSTEMBACKDROP_TYPE,
-                ctypes.byref(backdrop), ctypes.sizeof(backdrop)
-            )
+            v = ctypes.c_int(1 if self.is_dark else 0)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(v), 4)
+            bd = ctypes.c_int(2)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 38, ctypes.byref(bd), 4)
         except Exception:
             pass
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if hasattr(self, '_glow'):
-            self._glow.setGeometry(0, 0, self.width(), self.height())
+        if hasattr(self, '_bg'):
+            self._bg.setGeometry(0, 0, self.width(), self.height())
 
     # ─── Search ───────────────────────────────────────────
 
     def _do_search(self):
         q = self.search_input.text().strip()
         if not q:
-            self.model.clear()
-            self.list_view.hide()
-            self.empty_widget.show()
-            self.empty_icon.setText("⚡")
-            self.empty_title.setText("Search your files")
-            self.empty_sub.setText("Type a file name, extension, or search inside documents\nSupports PDF, DOCX, XLSX, PPTX, EPUB, RTF and 35+ text formats")
-            self.result_count_label.setText("")
-            self.search_time_label.setText("")
+            self._show_empty("⚡", "READY TO SEARCH",
+                             "// type a query and press ENTER\n// searches file names + document contents")
             return
 
         t0 = time.perf_counter()
@@ -965,15 +1012,20 @@ class QuickFindWindow(QMainWindow):
             self.list_view.show()
             self.list_view.setCurrentIndex(self.model.index(0))
         else:
-            self.model.clear()
-            self.list_view.hide()
-            self.empty_widget.show()
-            self.empty_icon.setText("🔍")
-            self.empty_title.setText("No results found")
-            self.empty_sub.setText("Try a different search term")
+            self._show_empty("🔍", "NO RESULTS", "// try a different search term")
 
-        self.result_count_label.setText(f"{len(results)} results")
-        self.search_time_label.setText(f"⚡ {ms:.1f} ms")
+        self.result_count_label.setText(f"[{len(results)} results]")
+        self.search_time_label.setText(f"⚡ {ms:.1f}ms")
+
+    def _show_empty(self, icon, title, sub):
+        self.model.clear()
+        self.list_view.hide()
+        self.empty_widget.show()
+        self.empty_icon.setText(icon)
+        self.empty_title.setText(title)
+        self.empty_sub.setText(sub)
+        self.result_count_label.setText("")
+        self.search_time_label.setText("")
 
     # ─── Actions ──────────────────────────────────────────
 
@@ -989,9 +1041,9 @@ class QuickFindWindow(QMainWindow):
             if os.path.exists(path):
                 os.startfile(path)
             else:
-                self.status_label.setText(f"Not found: {os.path.basename(path)}")
+                self.status_label.setText(f"// not found: {os.path.basename(path)}")
         except Exception as e:
-            self.status_label.setText(f"Error: {e}")
+            self.status_label.setText(f"// error: {e}")
 
     def _on_double_click(self, index):
         path = self.model.get_path(index.row())
@@ -1014,11 +1066,8 @@ class QuickFindWindow(QMainWindow):
     def _clear_search(self):
         self.search_input.clear()
         self.search_input.setFocus()
-        self.model.clear()
-        self.list_view.hide()
-        self.empty_widget.show()
-        self.result_count_label.setText("")
-        self.search_time_label.setText("")
+        self._show_empty("⚡", "READY TO SEARCH",
+                         "// type a query and press ENTER\n// searches file names + document contents")
 
     def _focus_search(self):
         self.search_input.setFocus()
@@ -1029,8 +1078,8 @@ class QuickFindWindow(QMainWindow):
     def _start_indexing(self):
         n = self.db.get_file_count()
         if n > 0:
-            self.status_label.setText(f"Ready — {n:,} files indexed")
-            self.idx_count_label.setText(f"  {n:,} files")
+            self.status_label.setText(f"// ready — {n:,} files indexed")
+            self.idx_count_label.setText(f"  [{n:,}]")
             lt = self.db.get_meta("last_index_time")
             if lt:
                 try:
@@ -1039,7 +1088,7 @@ class QuickFindWindow(QMainWindow):
                 except Exception:
                     pass
         else:
-            self.status_label.setText("First indexing starting...")
+            self.status_label.setText("// first indexing starting...")
             QTimer.singleShot(500, lambda: self._run_indexer(True))
 
     def _run_indexer(self, reindex):
@@ -1054,22 +1103,22 @@ class QuickFindWindow(QMainWindow):
     def _reindex(self):
         if self._indexer_thread and self._indexer_thread.isRunning():
             self._indexer_thread.stop()
-            self.status_label.setText("Indexing stopped")
-            self.reindex_btn.setText("Reindex")
+            self.status_label.setText("// indexing stopped")
+            self.reindex_btn.setText("⟳  REINDEX")
             return
-        self.reindex_btn.setText("Stop")
+        self.reindex_btn.setText("■  STOP")
         self._run_indexer(True)
 
     def _on_idx_progress(self, count):
-        self.idx_count_label.setText(f"  {count:,} files")
+        self.idx_count_label.setText(f"  [{count:,}]")
 
     def _on_idx_status(self, msg):
-        self.status_label.setText(msg)
+        self.status_label.setText(f"// {msg}")
         if "Ready" in msg:
-            self.reindex_btn.setText("Reindex")
+            self.reindex_btn.setText("⟳  REINDEX")
 
     def _on_idx_done(self):
-        self.reindex_btn.setText("Reindex")
+        self.reindex_btn.setText("⟳  REINDEX")
         self._start_watcher()
 
     # ─── File Watcher ─────────────────────────────────────
@@ -1080,15 +1129,13 @@ class QuickFindWindow(QMainWindow):
         from database import FileWatcher
         self._file_watcher = FileWatcher(
             self.db,
-            status_callback=lambda msg: QTimer.singleShot(0, lambda: self.status_label.setText(msg))
+            status_callback=lambda msg: QTimer.singleShot(0, lambda: self.status_label.setText(f"// {msg}"))
         )
         self._file_watcher.start()
 
     def _stop_watcher(self):
         if self._file_watcher:
             self._file_watcher.stop()
-
-    # ─── Cleanup ──────────────────────────────────────────
 
     def closeEvent(self, event):
         self._stop_watcher()
@@ -1114,7 +1161,6 @@ def main():
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-
     window = QuickFindWindow()
     window.show()
     sys.exit(app.exec())

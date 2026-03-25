@@ -33,8 +33,8 @@ RICH_EXTENSIONS = {
 
 ALL_CONTENT_EXTENSIONS = TEXT_EXTENSIONS | RICH_EXTENSIONS
 
-MAX_CONTENT_BYTES = 8192   # First 8KB for plain text files
-MAX_CONTENT_CHARS = 4096   # Max chars to store from rich documents
+MAX_CONTENT_BYTES = 1024   # First 1KB for plain text files
+MAX_CONTENT_CHARS = 512    # Max chars from rich documents
 MAX_RICH_FILE_SIZE = 50_000_000  # Skip rich docs larger than 50MB
 
 DB_DIR = "D:\\QuickFind_Index"
@@ -52,7 +52,7 @@ def _read_pdf(path):
         text_parts = []
         for page in doc:
             text_parts.append(page.get_text())
-            if len("".join(text_parts)) > MAX_CONTENT_CHARS:
+            if sum(len(t) for t in text_parts) > MAX_CONTENT_CHARS:
                 break
         doc.close()
         return "".join(text_parts)[:MAX_CONTENT_CHARS]
@@ -262,6 +262,8 @@ class FileDatabase:
                 file_list
             )
             self.conn.commit()
+            self.conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+
 
     def upsert_file(self, name, path, ext, size, modified, is_dir, content_text=""):
         with self.lock:
@@ -433,6 +435,15 @@ class FileIndexer:
         self.db.set_meta("last_index_time", datetime.now().isoformat())
         self.db.set_meta("total_files", str(self.total_indexed))
         self.db.set_meta("index_duration", f"{elapsed:.1f}")
+
+        # Compact DB: checkpoint WAL + vacuum
+        self._status("Compacting database...")
+        try:
+            with self.db.lock:
+                self.db.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                self.db.conn.execute("VACUUM")
+        except Exception:
+            pass
 
         count = self.db.get_file_count()
         db_size = self.db.get_db_size_mb()
