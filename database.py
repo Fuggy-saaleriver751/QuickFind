@@ -52,7 +52,8 @@ PRESETS = {
     # * estimates — actual size varies depending on file count
 }
 
-DB_DIR = "D:\\QuickFind_Index"
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_DIR = os.path.join(_SCRIPT_DIR, "QuickFind_Index")
 DB_PATH = os.path.join(DB_DIR, "index.db")
 CONFIG_PATH = os.path.join(DB_DIR, "config.json")
 

@@ -184,7 +184,7 @@ class QuickFindService:
     def _get_startup_command(self):
         pythonw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
         if not os.path.exists(pythonw):
-            pythonw = r"C:\Users\dgknk\AppData\Local\Programs\Python\Python313\pythonw.exe"
+            pythonw = "pythonw"
         service_path = os.path.join(SCRIPT_DIR, "service.pyw")
         return f'"{pythonw}" "{service_path}"'
 
