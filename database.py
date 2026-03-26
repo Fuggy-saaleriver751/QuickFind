@@ -45,14 +45,18 @@ MAX_RICH_FILE_SIZE = 50_000_000
 
 # ── Content indexing presets ──
 PRESETS = {
-    "minimal":  {"text_bytes": 2,     "rich_chars": 2,     "label": "Minimal (~50-80 MB) *"},
-    "standard": {"text_bytes": 16,    "rich_chars": 16,    "label": "Standard (~80-150 MB) *"},
-    "deep":     {"text_bytes": 2048,  "rich_chars": 2048,  "label": "Deep (~200-500 MB) *"},
+    "minimal":  {"text_bytes": 128,   "rich_chars": 128,   "label": "Minimal (~50-80 MB) *"},
+    "standard": {"text_bytes": 512,   "rich_chars": 512,   "label": "Standard (~80-150 MB) *"},
+    "deep":     {"text_bytes": 4096,  "rich_chars": 4096,  "label": "Deep (~200-500 MB) *"},
     "maximum":  {"text_bytes": 0,     "rich_chars": 0,     "label": "Maximum (~500 MB+) *"},
     # * estimates — actual size varies depending on file count
 }
 
-_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+import sys as _sys
+if getattr(_sys, 'frozen', False):
+    _SCRIPT_DIR = os.path.dirname(_sys.executable)
+else:
+    _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_DIR = os.path.join(_SCRIPT_DIR, "QuickFind_Index")
 DB_PATH = os.path.join(DB_DIR, "index.db")
 CONFIG_PATH = os.path.join(DB_DIR, "config.json")
