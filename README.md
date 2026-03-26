@@ -1,34 +1,37 @@
 # QuickFind
 
-Ultra-fast file search engine for Windows. Searches file names **and** document contents in milliseconds.
+Ultra-fast desktop file search for Windows. Searches file names **and** document contents in milliseconds.
 
 ![QuickFind](quickfind.png)
 
 ## Features
 
 - **40+ Format Support** — Search inside PDF, DOCX, XLSX, PPTX, RTF, EPUB and 35+ plain-text formats
-- **FTS5 Full-Text Search** — Powered by SQLite FTS5 with BM25 ranking
-- **Cyberpunk UI** — Neon glassmorphism interface with dark/light themes, animated grid background, and glow effects
+- **FTS5 Full-Text Search** — SQLite FTS5 with BM25 ranking, millisecond results
+- **Document Preview** — Preview text, PDF, DOCX, XLSX content directly in the app
+- **Material Design 3 UI** — Clean, modern interface with 4 themes (Light, Dark, Turquoise, Purple)
+- **12 Languages** — English, Turkish, German, French, Spanish, Portuguese, Italian, Japanese, Chinese, Korean, Russian, Arabic
 - **Real-Time File Watching** — Index stays up to date automatically via filesystem events
-- **Instant Results** — Millisecond-level search across millions of files
-- **Lightweight** — Runs quietly in the background with minimal resource usage
+- **Customizable Settings** — Font size, max results, content indexing depth, and more
+- **Background Service** — Optional system tray service for continuous indexing
+- **Portable** — No installation required, runs from any folder on any drive
 
 ## Supported Formats
 
 | Category | Formats |
 |---|---|
-| Documents | PDF, DOCX, DOC, XLSX, XLS, PPTX, PPT, RTF, EPUB |
-| Code | PY, JS, TS, HTML, CSS, JAVA, C, C++, C#, GO, RUST, PHP, RB, KT, and more |
+| Documents | PDF, DOCX, XLSX, PPTX, RTF, EPUB, TXT, MD, CSV |
+| Code | PY, JS, TS, HTML, CSS, JAVA, C, C++, C#, GO, RUST, PHP, RB, and more |
 | Config | JSON, XML, YAML, TOML, INI, CFG, ENV |
-| Text | TXT, MD, RST, LOG, CSV, SQL, TEX, SRT |
+| Text | LOG, RST, SQL, TEX, SRT, SH, BAT, PS1 |
 
 ## Installation
 
 ### Download (Recommended)
 
-Download the latest `QuickFind.exe` from the [Releases](../../releases) page and run it. No installation required.
+Download the latest **QuickFind** folder from the [Releases](../../releases) page, extract it, and run `QuickFind.exe`.
 
-> **Note:** Windows SmartScreen may show a warning for unsigned applications. Click **"More info"** → **"Run anyway"** to proceed. The application is open source and safe to use.
+> **Note:** Windows SmartScreen may show a warning for unsigned applications. Click **"More info"** then **"Run anyway"**. The application is fully open source.
 
 ### Build from Source
 
@@ -37,31 +40,12 @@ pip install -r requirements.txt
 python QuickFind.pyw
 ```
 
-## Configuration
+To build the exe:
 
-### Content Indexing Limits
-
-QuickFind indexes a portion of each file's content to keep the database size manageable. The defaults are:
-
-| Setting | Default | File |
-|---|---|---|
-| `MAX_CONTENT_BYTES` | 1024 (1KB) | `database.py` — max bytes read from plain-text files |
-| `MAX_CONTENT_CHARS` | 512 | `database.py` — max characters stored from rich documents (PDF, DOCX, etc.) |
-| `MAX_RICH_FILE_SIZE` | 50MB | `database.py` — skip rich documents larger than this |
-
-You can increase these values in `database.py` to index more content per file. This will improve search accuracy for deep content searches, but the database will grow significantly larger. For example:
-
-```python
-# Deep content indexing (larger database, ~1-2GB+)
-MAX_CONTENT_BYTES = 8192   # 8KB per text file
-MAX_CONTENT_CHARS = 4096   # 4096 chars per document
-
-# Light indexing (smaller database, ~200-400MB)
-MAX_CONTENT_BYTES = 512    # 512 bytes per text file
-MAX_CONTENT_CHARS = 256    # 256 chars per document
+```bash
+pip install pyinstaller
+pyinstaller QuickFind.spec
 ```
-
-The database is stored at `D:\QuickFind_Index\`.
 
 ## Keyboard Shortcuts
 
@@ -71,16 +55,21 @@ The database is stored at `D:\QuickFind_Index\`.
 | `Double-click` | Open file |
 | `Ctrl+O` | Open file location in Explorer |
 | `Ctrl+R` | Reindex all files |
-| `Ctrl+D` | Toggle dark/light theme |
 | `Ctrl+L` | Focus search bar |
+| `Ctrl+1/2/3` | Switch pages (Search / Index Status / Settings) |
 | `Esc` | Clear search |
+
+## Architecture
+
+- **Search Engine**: SQLite FTS5 with directory deduplication and WAL mode
+- **Content Extraction**: PyMuPDF (PDF), python-docx (DOCX), openpyxl (XLSX), python-pptx (PPTX), striprtf (RTF), ebooklib (EPUB)
+- **UI Framework**: PySide6 (Qt6) with Material Design 3 theme system
+- **File Watching**: watchdog library for real-time filesystem events
 
 ## Requirements (build from source)
 
 - Python 3.13+
-- PySide6
-- PyMuPDF, python-docx, openpyxl, python-pptx, striprtf, ebooklib, beautifulsoup4
-- watchdog
+- PySide6, PyMuPDF, python-docx, openpyxl, python-pptx, striprtf, ebooklib, beautifulsoup4, watchdog
 
 See `requirements.txt` for full list.
 

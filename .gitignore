@@ -3,3 +3,6 @@ __pycache__/
 build/
 dist/
 *.spec
+QuickFind_Index/
+nuitka-crash-report.xml
+dist_nuitka/

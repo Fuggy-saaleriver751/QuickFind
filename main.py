@@ -1,10 +1,10 @@
 """
 QuickFind — Ultra-Fast File Search
-PySide6 · Neon Glassmorphism · Dark/Light · FTS5 Content Search
+PySide6 · Material Design 3 · FTS5 Content Search
 Supports: PDF, DOCX, XLSX, PPTX, RTF, EPUB + 35 plain-text formats
 """
 
-import sys, os, subprocess, time, ctypes, math
+import sys, os, subprocess, time, ctypes, json
 from datetime import datetime
 
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("dgknk.QuickFind.1")
@@ -13,10 +13,12 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QLabel, QListView, QPushButton, QStatusBar,
     QStyledItemDelegate, QStyle, QFrame, QGraphicsDropShadowEffect,
-    QDialog, QRadioButton, QButtonGroup, QMessageBox
+    QDialog, QRadioButton, QButtonGroup, QMessageBox, QSplitter,
+    QProgressBar, QSlider, QScrollArea, QGridLayout, QStackedWidget,
+    QSizePolicy, QComboBox, QCheckBox
 )
 from PySide6.QtCore import (
-    Qt, QSize, QRect, QThread, Signal, QModelIndex,
+    Qt, QSize, QRect, QThread, Signal, QModelIndex, QObject,
     QAbstractListModel, QTimer, QRectF, QPointF
 )
 from PySide6.QtGui import (
@@ -25,167 +27,646 @@ from PySide6.QtGui import (
     QRadialGradient, QShortcut, QKeySequence
 )
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+import sys as _sys
+if getattr(_sys, 'frozen', False):
+    SCRIPT_DIR = os.path.dirname(_sys.executable)
+else:
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
+FONT = "Segoe UI"
+FONT_MONO = "Consolas"
 
 # ══════════════════════════════════════════════════════════════
-#  THEMES — Cyberpunk / Tech palette
+#  THEMES
 # ══════════════════════════════════════════════════════════════
 
 THEMES = {
-    "dark": {
-        "bg":               QColor(6, 6, 12),
-        "surface":          QColor(10, 10, 20),
-        "surface_elevated": QColor(16, 16, 30),
-        "card":             QColor(12, 12, 24),
-        "card_hover":       QColor(18, 16, 36),
-        "card_selected":    QColor(24, 16, 56),
-        "card_border":      QColor(30, 28, 56),
-        "card_border_hover": QColor(100, 60, 220, 120),
-        "search_bg":        QColor(8, 8, 18),
-        "search_border":    QColor(40, 36, 72),
-        "search_focus":     QColor(100, 60, 255),
-        "accent":           QColor(100, 60, 255),
-        "accent2":          QColor(0, 210, 255),
-        "accent3":          QColor(255, 40, 150),
-        "accent_hover":     QColor(130, 90, 255),
-        "text":             QColor(230, 230, 242),
-        "text_sec":         QColor(140, 140, 175),
-        "text_muted":       QColor(65, 62, 95),
-        "badge_purple_bg":  QColor(25, 16, 55),
-        "badge_purple_text": QColor(160, 130, 255),
-        "badge_cyan_bg":    QColor(8, 30, 38),
-        "badge_cyan_text":  QColor(0, 210, 255),
-        "badge_green_bg":   QColor(8, 32, 18),
-        "badge_green_text": QColor(0, 230, 118),
-        "badge_pink_bg":    QColor(35, 10, 28),
-        "badge_pink_text":  QColor(255, 80, 180),
-        "badge_orange_bg":  QColor(35, 22, 8),
-        "badge_orange_text": QColor(255, 160, 40),
-        "divider":          QColor(20, 18, 38),
-        "scrollbar":        QColor(28, 26, 50),
-        "scrollbar_hover":  QColor(50, 44, 85),
-        "green":            QColor(0, 230, 118),
-        "yellow":           QColor(255, 200, 40),
-        "red":              QColor(255, 60, 80),
-        "blue":             QColor(0, 150, 255),
-        "grid_line":        QColor(20, 18, 40),
-        "glow1":            QColor(100, 60, 255, 30),
-        "glow2":            QColor(0, 210, 255, 18),
-        "glow3":            QColor(255, 40, 150, 12),
-    },
     "light": {
-        "bg":               QColor(245, 244, 252),
-        "surface":          QColor(255, 255, 255),
-        "surface_elevated": QColor(255, 255, 255),
-        "card":             QColor(255, 255, 255),
-        "card_hover":       QColor(248, 246, 255),
-        "card_selected":    QColor(238, 232, 255),
-        "card_border":      QColor(220, 216, 238),
-        "card_border_hover": QColor(130, 90, 220, 150),
-        "search_bg":        QColor(255, 255, 255),
-        "search_border":    QColor(200, 196, 225),
-        "search_focus":     QColor(90, 50, 210),
-        "accent":           QColor(90, 50, 210),
-        "accent2":          QColor(0, 160, 210),
-        "accent3":          QColor(210, 30, 120),
-        "accent_hover":     QColor(110, 70, 230),
-        "text":             QColor(20, 18, 42),
-        "text_sec":         QColor(70, 65, 100),
-        "text_muted":       QColor(135, 130, 165),
-        "badge_purple_bg":  QColor(240, 236, 255),
-        "badge_purple_text": QColor(90, 50, 210),
-        "badge_cyan_bg":    QColor(228, 246, 255),
-        "badge_cyan_text":  QColor(0, 120, 170),
-        "badge_green_bg":   QColor(228, 250, 238),
-        "badge_green_text": QColor(0, 140, 65),
-        "badge_pink_bg":    QColor(255, 232, 244),
-        "badge_pink_text":  QColor(190, 25, 105),
-        "badge_orange_bg":  QColor(255, 242, 225),
-        "badge_orange_text": QColor(190, 110, 0),
-        "divider":          QColor(228, 224, 242),
-        "scrollbar":        QColor(210, 206, 228),
-        "scrollbar_hover":  QColor(185, 180, 210),
-        "green":            QColor(0, 150, 65),
-        "yellow":           QColor(190, 140, 0),
-        "red":              QColor(200, 35, 45),
-        "blue":             QColor(0, 100, 210),
-        "grid_line":        QColor(245, 244, 252, 0),
-        "glow1":            QColor(90, 50, 210, 8),
-        "glow2":            QColor(0, 160, 210, 5),
-        "glow3":            QColor(210, 30, 120, 4),
-    }
+        "bg":         "#fcf8f9",  "surface":    "#fcf8f9",
+        "sc":         "#f0edef",  "scl":        "#f6f3f4",
+        "sch":        "#eae7ea",  "white":      "#ffffff",
+        "primary":    "#0054d6",  "pc":         "#dae1ff",
+        "opc":        "#0049bb",  "on_primary": "#ffffff",
+        "secondary":  "#5f5f5f",  "sec_c":      "#e4e2e6",
+        "on_s":       "#323235",  "on_sv":      "#5f5f61",
+        "outline":    "#7b7a7d",  "ov":         "#b3b1b4",
+        "divider":    "#e4e2e5",  "error":      "#9f403d",
+        "sb":         "#b3b1b4",  "sb_h":       "#7b7a7d",
+        "card_hover": "#f6f3f4",  "card_sel":   "#dae1ff",
+    },
+    "dark": {
+        "bg":         "#111318",  "surface":    "#111318",
+        "sc":         "#1d1f25",  "scl":        "#191b21",
+        "sch":        "#272a30",  "white":      "#2a2d33",
+        "primary":    "#a8c8ff",  "pc":         "#003068",
+        "opc":        "#d6e3ff",  "on_primary": "#002552",
+        "secondary":  "#c6c6ca",  "sec_c":      "#444548",
+        "on_s":       "#e3e2e6",  "on_sv":      "#c4c6cf",
+        "outline":    "#8e9099",  "ov":         "#44464f",
+        "divider":    "#44464f",  "error":      "#ffb4ab",
+        "sb":         "#44464f",  "sb_h":       "#8e9099",
+        "card_hover": "#272a30",  "card_sel":   "#003068",
+    },
+    "turquoise": {
+        "bg": "#f0fafa", "surface": "#f0fafa",
+        "sc": "#e0f0f0", "scl": "#e8f5f5",
+        "sch": "#d4ebeb", "white": "#ffffff",
+        "primary": "#00897b", "pc": "#b2dfdb",
+        "opc": "#00695c", "on_primary": "#ffffff",
+        "secondary": "#5f6368", "sec_c": "#e0e0e0",
+        "on_s": "#263238", "on_sv": "#546e7a",
+        "outline": "#78909c", "ov": "#b0bec5",
+        "divider": "#cfd8dc", "error": "#c62828",
+        "sb": "#b0bec5", "sb_h": "#78909c",
+        "card_hover": "#e0f2f1", "card_sel": "#b2dfdb",
+    },
+    "purple": {
+        "bg": "#faf5ff", "surface": "#faf5ff",
+        "sc": "#f3e5f5", "scl": "#f5eef8",
+        "sch": "#e8d5f0", "white": "#ffffff",
+        "primary": "#7b1fa2", "pc": "#e1bee7",
+        "opc": "#6a1b9a", "on_primary": "#ffffff",
+        "secondary": "#5f6368", "sec_c": "#e0e0e0",
+        "on_s": "#311b40", "on_sv": "#6d5080",
+        "outline": "#9575cd", "ov": "#ce93d8",
+        "divider": "#e1bee7", "error": "#c62828",
+        "sb": "#ce93d8", "sb_h": "#9575cd",
+        "card_hover": "#f3e5f5", "card_sel": "#e1bee7",
+    },
 }
 
-EXT_LABELS = {
-    ".pdf": "PDF", ".docx": "DOCX", ".doc": "DOC", ".xlsx": "XLSX",
-    ".xls": "XLS", ".pptx": "PPTX", ".ppt": "PPT", ".csv": "CSV",
-    ".py": "PY", ".js": "JS", ".ts": "TS", ".html": "HTML",
-    ".css": "CSS", ".java": "JAVA", ".cpp": "C++", ".c": "C",
-    ".cs": "C#", ".go": "GO", ".rs": "RUST", ".json": "JSON",
-    ".xml": "XML", ".yaml": "YML", ".md": "MD", ".txt": "TXT",
-    ".jpg": "JPG", ".png": "PNG", ".gif": "GIF", ".svg": "SVG",
+def T(theme, key):
+    return theme[key]
+
+def _darken(hex_color, amount=30):
+    """Darken a hex color by reducing RGB values."""
+    c = hex_color.lstrip('#')
+    r, g, b = int(c[:2], 16), int(c[2:4], 16), int(c[4:6], 16)
+    r = max(0, r - amount)
+    g = max(0, g - amount)
+    b = max(0, b - amount)
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+EXT_ICONS = {
+    ".pdf": "PDF", ".docx": "DOC", ".doc": "DOC", ".rtf": "RTF",
+    ".txt": "TXT", ".md": "MD", ".epub": "EPB",
+    ".xlsx": "XLS", ".xls": "XLS", ".csv": "CSV",
+    ".pptx": "PPT", ".ppt": "PPT",
+    ".py": "PY", ".js": "JS", ".ts": "TS", ".html": "HTM", ".css": "CSS",
+    ".java": "JAV", ".cpp": "C++", ".c": "C", ".cs": "C#",
+    ".go": "GO", ".rs": "RS", ".json": "JSN", ".xml": "XML",
+    ".jpg": "JPG", ".jpeg": "JPG", ".png": "PNG", ".gif": "GIF", ".svg": "SVG",
     ".mp4": "MP4", ".mp3": "MP3", ".zip": "ZIP", ".rar": "RAR",
-    ".exe": "EXE", ".sql": "SQL", ".rtf": "RTF", ".epub": "EPUB",
-    ".bat": "BAT", ".sh": "SH", ".ps1": "PS1", ".ini": "INI",
-    ".log": "LOG", ".cfg": "CFG", ".toml": "TOML",
+    ".exe": "EXE", ".sql": "SQL",
 }
 
-# Badge color mapping by category
-EXT_BADGE_CATEGORY = {
+EXT_CATEGORY = {
     "doc":   {".pdf", ".docx", ".doc", ".rtf", ".txt", ".md", ".epub", ".rst"},
-    "data":  {".xlsx", ".xls", ".csv", ".json", ".xml", ".yaml", ".yml", ".toml", ".sql", ".db"},
+    "data":  {".xlsx", ".xls", ".csv", ".json", ".xml", ".yaml", ".yml", ".toml", ".sql"},
     "code":  {".py", ".pyw", ".js", ".ts", ".jsx", ".tsx", ".html", ".css", ".java", ".cpp",
-              ".c", ".cs", ".go", ".rs", ".rb", ".php", ".kt", ".scala", ".vue", ".svelte",
-              ".scss", ".less", ".sh", ".bash", ".bat", ".cmd", ".ps1"},
-    "media": {".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".mp4", ".avi", ".mkv",
-              ".mov", ".mp3", ".wav", ".flac"},
+              ".c", ".cs", ".go", ".rs", ".rb", ".php", ".sh", ".bat", ".ps1"},
+    "media": {".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".mp4", ".mp3", ".wav"},
     "arch":  {".zip", ".rar", ".7z", ".tar", ".gz", ".exe", ".msi"},
 }
 
+TYPE_NAMES = {
+    ".pdf": "Portable Document Format", ".docx": "Word Document",
+    ".xlsx": "Excel Spreadsheet", ".pptx": "PowerPoint Presentation",
+    ".txt": "Plain Text", ".md": "Markdown", ".csv": "Comma-Separated Values",
+    ".py": "Python Script", ".js": "JavaScript", ".ts": "TypeScript",
+    ".html": "HTML Document", ".css": "Stylesheet", ".json": "JSON Data",
+    ".jpg": "JPEG Image", ".png": "PNG Image", ".svg": "SVG Vector",
+    ".mp4": "MP4 Video", ".mp3": "MP3 Audio", ".zip": "ZIP Archive",
+    ".exe": "Executable", ".rtf": "Rich Text", ".epub": "E-Book",
+}
 
-def _get_badge_colors(ext, is_dir, T):
-    if is_dir:
-        return T["badge_orange_bg"], T["badge_orange_text"]
-    for cat, exts in EXT_BADGE_CATEGORY.items():
-        if ext in exts:
-            if cat == "doc":
-                return T["badge_purple_bg"], T["badge_purple_text"]
-            if cat == "data":
-                return T["badge_green_bg"], T["badge_green_text"]
-            if cat == "code":
-                return T["badge_cyan_bg"], T["badge_cyan_text"]
-            if cat == "media":
-                return T["badge_pink_bg"], T["badge_pink_text"]
-            if cat == "arch":
-                return T["badge_orange_bg"], T["badge_orange_text"]
-    return T["badge_purple_bg"], T["badge_purple_text"]
+
+# ══════════════════════════════════════════════════════════════
+#  TRANSLATIONS
+# ══════════════════════════════════════════════════════════════
+
+TRANSLATIONS = {
+    "English": {
+        "search": "Search", "index_status": "Index Status", "settings": "Settings",
+        "desktop_search": "Desktop Search",
+        "search_placeholder": "Search for files, code, or documents...",
+        "all": "All", "documents": "Documents", "images": "Images",
+        "code": "Code", "archives": "Archives", "pdfs": "PDFs",
+        "relevance": "Relevance", "name": "Name", "size": "Size", "newest": "Newest",
+        "ready_to_search": "Ready to Search",
+        "type_query": "Type a query and press Enter",
+        "no_results": "No Results", "try_different": "Try a different search term",
+        "results": "results", "select_file": "Select a file",
+        "no_preview": "No preview available for",
+        "open_file": "Open File", "show_folder": "Show in Folder",
+        "copy_path": "Copy File Path",
+        "index_title": "Index Status",
+        "index_desc": "Monitor your search database and manage file indexing.",
+        "rebuild_index": "Rebuild Index", "current_progress": "Current Progress",
+        "db_stats": "Database Stats", "db_size": "Database Size",
+        "last_indexed": "Last Indexed", "search_latency": "Search Latency",
+        "speed": "SPEED", "duration": "DURATION", "files": "FILES",
+        "content_depth": "Content Indexing Depth",
+        "save_reindex": "Save & Reindex",
+        "file_type_support": "File Type Support",
+        "settings_title": "Settings",
+        "settings_desc": "Customize QuickFind appearance and behavior.",
+        "appearance": "APPEARANCE", "theme": "Theme", "font_size": "Font Size",
+        "search_behavior": "SEARCH BEHAVIOR", "max_results": "Max Results",
+        "open_single_click": "Open file on single click",
+        "indexing": "INDEXING",
+        "auto_reindex": "Auto-reindex when files change (file watcher)",
+        "index_hidden": "Index hidden files and folders",
+        "language": "LANGUAGE", "lang_label": "Language",
+        "save_settings": "Save Settings",
+        "initializing": "Initializing...",
+        "ready": "Ready", "files_indexed": "files indexed",
+        "first_indexing": "First indexing starting...",
+        "indexing_status": "Indexing...", "indexing_stopped": "Indexing stopped",
+    },
+    "Turkish": {
+        "search": "Ara", "index_status": "Dizin Durumu", "settings": "Ayarlar",
+        "desktop_search": "Masaustu Arama",
+        "search_placeholder": "Dosya, kod veya belge ara...",
+        "all": "Tumunu", "documents": "Belgeler", "images": "Gorseller",
+        "code": "Kod", "archives": "Arsivler", "pdfs": "PDF'ler",
+        "relevance": "Ilgi", "name": "Ad", "size": "Boyut", "newest": "En Yeni",
+        "ready_to_search": "Aramaya Hazir",
+        "type_query": "Sorgu yazin ve Enter'a basin",
+        "no_results": "Sonuc Yok", "try_different": "Farkli bir arama deneyin",
+        "results": "sonuc", "select_file": "Dosya secin",
+        "no_preview": "On izleme yok:",
+        "open_file": "Dosyayi Ac", "show_folder": "Klasorde Goster",
+        "copy_path": "Yolu Kopyala",
+        "index_title": "Dizin Durumu",
+        "index_desc": "Arama veritabaninizi izleyin ve dizinlemeyi yonetin.",
+        "rebuild_index": "Yeniden Dizinle", "current_progress": "Mevcut Ilerleme",
+        "db_stats": "Veritabani Istatistikleri", "db_size": "Veritabani Boyutu",
+        "last_indexed": "Son Dizinleme", "search_latency": "Arama Gecikmesi",
+        "speed": "HIZ", "duration": "SURE", "files": "DOSYA",
+        "content_depth": "Icerik Dizinleme Derinligi",
+        "save_reindex": "Kaydet ve Yeniden Dizinle",
+        "file_type_support": "Dosya Turu Destegi",
+        "settings_title": "Ayarlar",
+        "settings_desc": "QuickFind gorunumunu ve davranisini ozellestirin.",
+        "appearance": "GORUNUM", "theme": "Tema", "font_size": "Yazi Boyutu",
+        "search_behavior": "ARAMA DAVRANISI", "max_results": "Maks Sonuc",
+        "open_single_click": "Tek tikla dosya ac",
+        "indexing": "DIZINLEME",
+        "auto_reindex": "Dosya degistiginde otomatik yeniden dizinle",
+        "index_hidden": "Gizli dosya ve klasorleri dizinle",
+        "language": "DIL", "lang_label": "Dil",
+        "save_settings": "Ayarlari Kaydet",
+        "initializing": "Baslatiliyor...",
+        "ready": "Hazir", "files_indexed": "dosya dizinlendi",
+        "first_indexing": "Ilk dizinleme basliyor...",
+        "indexing_status": "Dizinleniyor...", "indexing_stopped": "Dizinleme durduruldu",
+    },
+    "German": {
+        "search": "Suche", "index_status": "Indexstatus", "settings": "Einstellungen",
+        "desktop_search": "Desktop-Suche",
+        "search_placeholder": "Dateien, Code oder Dokumente suchen...",
+        "all": "Alle", "documents": "Dokumente", "images": "Bilder",
+        "code": "Code", "archives": "Archive", "pdfs": "PDFs",
+        "relevance": "Relevanz", "name": "Name", "size": "Groesse", "newest": "Neueste",
+        "ready_to_search": "Bereit zur Suche",
+        "type_query": "Suchbegriff eingeben und Enter druecken",
+        "no_results": "Keine Ergebnisse", "try_different": "Versuchen Sie einen anderen Suchbegriff",
+        "results": "Ergebnisse", "select_file": "Datei auswaehlen",
+        "no_preview": "Keine Vorschau verfuegbar fuer",
+        "open_file": "Datei oeffnen", "show_folder": "Im Ordner anzeigen",
+        "copy_path": "Dateipfad kopieren",
+        "index_title": "Indexstatus",
+        "index_desc": "Ueberwachen Sie Ihre Suchdatenbank und verwalten Sie die Dateiindizierung.",
+        "rebuild_index": "Index neu erstellen", "current_progress": "Aktueller Fortschritt",
+        "db_stats": "Datenbankstatistiken", "db_size": "Datenbankgroesse",
+        "last_indexed": "Zuletzt indiziert", "search_latency": "Suchlatenz",
+        "speed": "GESCHW.", "duration": "DAUER", "files": "DATEIEN",
+        "content_depth": "Inhaltsindizierungstiefe",
+        "save_reindex": "Speichern & Neu indizieren",
+        "file_type_support": "Dateitypunterstuetzung",
+        "settings_title": "Einstellungen",
+        "settings_desc": "QuickFind-Erscheinungsbild und -Verhalten anpassen.",
+        "appearance": "ERSCHEINUNGSBILD", "theme": "Design", "font_size": "Schriftgroesse",
+        "search_behavior": "SUCHVERHALTEN", "max_results": "Max. Ergebnisse",
+        "open_single_click": "Datei mit Einzelklick oeffnen",
+        "indexing": "INDIZIERUNG",
+        "auto_reindex": "Automatisch neu indizieren bei Dateimaenderungen",
+        "index_hidden": "Versteckte Dateien und Ordner indizieren",
+        "language": "SPRACHE", "lang_label": "Sprache",
+        "save_settings": "Einstellungen speichern",
+        "initializing": "Initialisierung...",
+        "ready": "Bereit", "files_indexed": "Dateien indiziert",
+        "first_indexing": "Erste Indizierung startet...",
+        "indexing_status": "Indizierung...", "indexing_stopped": "Indizierung gestoppt",
+    },
+    "French": {
+        "search": "Recherche", "index_status": "Etat de l'index", "settings": "Parametres",
+        "desktop_search": "Recherche Bureau",
+        "search_placeholder": "Rechercher des fichiers, du code ou des documents...",
+        "all": "Tout", "documents": "Documents", "images": "Images",
+        "code": "Code", "archives": "Archives", "pdfs": "PDFs",
+        "relevance": "Pertinence", "name": "Nom", "size": "Taille", "newest": "Recent",
+        "ready_to_search": "Pret a chercher",
+        "type_query": "Saisissez une requete et appuyez sur Entree",
+        "no_results": "Aucun resultat", "try_different": "Essayez un autre terme de recherche",
+        "results": "resultats", "select_file": "Selectionnez un fichier",
+        "no_preview": "Aucun apercu disponible pour",
+        "open_file": "Ouvrir le fichier", "show_folder": "Afficher dans le dossier",
+        "copy_path": "Copier le chemin",
+        "index_title": "Etat de l'index",
+        "index_desc": "Surveillez votre base de donnees et gerez l'indexation des fichiers.",
+        "rebuild_index": "Reconstruire l'index", "current_progress": "Progression actuelle",
+        "db_stats": "Statistiques de la base", "db_size": "Taille de la base",
+        "last_indexed": "Derniere indexation", "search_latency": "Latence de recherche",
+        "speed": "VITESSE", "duration": "DUREE", "files": "FICHIERS",
+        "content_depth": "Profondeur d'indexation du contenu",
+        "save_reindex": "Enregistrer et Reindexer",
+        "file_type_support": "Types de fichiers pris en charge",
+        "settings_title": "Parametres",
+        "settings_desc": "Personnalisez l'apparence et le comportement de QuickFind.",
+        "appearance": "APPARENCE", "theme": "Theme", "font_size": "Taille de police",
+        "search_behavior": "COMPORTEMENT DE RECHERCHE", "max_results": "Resultats max",
+        "open_single_click": "Ouvrir le fichier en un clic",
+        "indexing": "INDEXATION",
+        "auto_reindex": "Reindexer automatiquement lors de modifications",
+        "index_hidden": "Indexer les fichiers et dossiers caches",
+        "language": "LANGUE", "lang_label": "Langue",
+        "save_settings": "Enregistrer les parametres",
+        "initializing": "Initialisation...",
+        "ready": "Pret", "files_indexed": "fichiers indexes",
+        "first_indexing": "Premiere indexation en cours...",
+        "indexing_status": "Indexation...", "indexing_stopped": "Indexation arretee",
+    },
+    "Spanish": {
+        "search": "Buscar", "index_status": "Estado del indice", "settings": "Configuracion",
+        "desktop_search": "Busqueda de escritorio",
+        "search_placeholder": "Buscar archivos, codigo o documentos...",
+        "all": "Todo", "documents": "Documentos", "images": "Imagenes",
+        "code": "Codigo", "archives": "Archivos", "pdfs": "PDFs",
+        "relevance": "Relevancia", "name": "Nombre", "size": "Tamano", "newest": "Reciente",
+        "ready_to_search": "Listo para buscar",
+        "type_query": "Escriba una consulta y presione Enter",
+        "no_results": "Sin resultados", "try_different": "Intente con otro termino de busqueda",
+        "results": "resultados", "select_file": "Seleccione un archivo",
+        "no_preview": "Vista previa no disponible para",
+        "open_file": "Abrir archivo", "show_folder": "Mostrar en carpeta",
+        "copy_path": "Copiar ruta",
+        "index_title": "Estado del indice",
+        "index_desc": "Supervise su base de datos de busqueda y gestione la indexacion.",
+        "rebuild_index": "Reconstruir indice", "current_progress": "Progreso actual",
+        "db_stats": "Estadisticas de la base", "db_size": "Tamano de la base",
+        "last_indexed": "Ultima indexacion", "search_latency": "Latencia de busqueda",
+        "speed": "VELOCIDAD", "duration": "DURACION", "files": "ARCHIVOS",
+        "content_depth": "Profundidad de indexacion de contenido",
+        "save_reindex": "Guardar y Reindexar",
+        "file_type_support": "Tipos de archivo compatibles",
+        "settings_title": "Configuracion",
+        "settings_desc": "Personalice la apariencia y el comportamiento de QuickFind.",
+        "appearance": "APARIENCIA", "theme": "Tema", "font_size": "Tamano de fuente",
+        "search_behavior": "COMPORTAMIENTO DE BUSQUEDA", "max_results": "Resultados max",
+        "open_single_click": "Abrir archivo con un solo clic",
+        "indexing": "INDEXACION",
+        "auto_reindex": "Reindexar automaticamente al cambiar archivos",
+        "index_hidden": "Indexar archivos y carpetas ocultos",
+        "language": "IDIOMA", "lang_label": "Idioma",
+        "save_settings": "Guardar configuracion",
+        "initializing": "Inicializando...",
+        "ready": "Listo", "files_indexed": "archivos indexados",
+        "first_indexing": "Primera indexacion iniciando...",
+        "indexing_status": "Indexando...", "indexing_stopped": "Indexacion detenida",
+    },
+    "Portuguese": {
+        "search": "Pesquisar", "index_status": "Estado do indice", "settings": "Configuracoes",
+        "desktop_search": "Pesquisa de area de trabalho",
+        "search_placeholder": "Pesquisar arquivos, codigo ou documentos...",
+        "all": "Todos", "documents": "Documentos", "images": "Imagens",
+        "code": "Codigo", "archives": "Arquivos", "pdfs": "PDFs",
+        "relevance": "Relevancia", "name": "Nome", "size": "Tamanho", "newest": "Recente",
+        "ready_to_search": "Pronto para pesquisar",
+        "type_query": "Digite uma consulta e pressione Enter",
+        "no_results": "Sem resultados", "try_different": "Tente um termo de pesquisa diferente",
+        "results": "resultados", "select_file": "Selecione um arquivo",
+        "no_preview": "Visualizacao nao disponivel para",
+        "open_file": "Abrir arquivo", "show_folder": "Mostrar na pasta",
+        "copy_path": "Copiar caminho",
+        "index_title": "Estado do indice",
+        "index_desc": "Monitore seu banco de dados de pesquisa e gerencie a indexacao.",
+        "rebuild_index": "Reconstruir indice", "current_progress": "Progresso atual",
+        "db_stats": "Estatisticas do banco", "db_size": "Tamanho do banco",
+        "last_indexed": "Ultima indexacao", "search_latency": "Latencia de pesquisa",
+        "speed": "VELOCIDADE", "duration": "DURACAO", "files": "ARQUIVOS",
+        "content_depth": "Profundidade de indexacao de conteudo",
+        "save_reindex": "Salvar e Reindexar",
+        "file_type_support": "Tipos de arquivo suportados",
+        "settings_title": "Configuracoes",
+        "settings_desc": "Personalize a aparencia e o comportamento do QuickFind.",
+        "appearance": "APARENCIA", "theme": "Tema", "font_size": "Tamanho da fonte",
+        "search_behavior": "COMPORTAMENTO DE PESQUISA", "max_results": "Resultados max",
+        "open_single_click": "Abrir arquivo com um clique",
+        "indexing": "INDEXACAO",
+        "auto_reindex": "Reindexar automaticamente ao alterar arquivos",
+        "index_hidden": "Indexar arquivos e pastas ocultos",
+        "language": "IDIOMA", "lang_label": "Idioma",
+        "save_settings": "Salvar configuracoes",
+        "initializing": "Inicializando...",
+        "ready": "Pronto", "files_indexed": "arquivos indexados",
+        "first_indexing": "Primeira indexacao iniciando...",
+        "indexing_status": "Indexando...", "indexing_stopped": "Indexacao interrompida",
+    },
+    "Italian": {
+        "search": "Cerca", "index_status": "Stato dell'indice", "settings": "Impostazioni",
+        "desktop_search": "Ricerca desktop",
+        "search_placeholder": "Cerca file, codice o documenti...",
+        "all": "Tutto", "documents": "Documenti", "images": "Immagini",
+        "code": "Codice", "archives": "Archivi", "pdfs": "PDF",
+        "relevance": "Rilevanza", "name": "Nome", "size": "Dimensione", "newest": "Recente",
+        "ready_to_search": "Pronto per cercare",
+        "type_query": "Digita una query e premi Invio",
+        "no_results": "Nessun risultato", "try_different": "Prova un termine di ricerca diverso",
+        "results": "risultati", "select_file": "Seleziona un file",
+        "no_preview": "Anteprima non disponibile per",
+        "open_file": "Apri file", "show_folder": "Mostra nella cartella",
+        "copy_path": "Copia percorso",
+        "index_title": "Stato dell'indice",
+        "index_desc": "Monitora il database di ricerca e gestisci l'indicizzazione dei file.",
+        "rebuild_index": "Ricostruisci indice", "current_progress": "Progresso attuale",
+        "db_stats": "Statistiche del database", "db_size": "Dimensione del database",
+        "last_indexed": "Ultima indicizzazione", "search_latency": "Latenza di ricerca",
+        "speed": "VELOCITA", "duration": "DURATA", "files": "FILE",
+        "content_depth": "Profondita di indicizzazione del contenuto",
+        "save_reindex": "Salva e Reindicizza",
+        "file_type_support": "Tipi di file supportati",
+        "settings_title": "Impostazioni",
+        "settings_desc": "Personalizza l'aspetto e il comportamento di QuickFind.",
+        "appearance": "ASPETTO", "theme": "Tema", "font_size": "Dimensione carattere",
+        "search_behavior": "COMPORTAMENTO DI RICERCA", "max_results": "Risultati max",
+        "open_single_click": "Apri file con un solo clic",
+        "indexing": "INDICIZZAZIONE",
+        "auto_reindex": "Reindicizza automaticamente quando i file cambiano",
+        "index_hidden": "Indicizza file e cartelle nascosti",
+        "language": "LINGUA", "lang_label": "Lingua",
+        "save_settings": "Salva impostazioni",
+        "initializing": "Inizializzazione...",
+        "ready": "Pronto", "files_indexed": "file indicizzati",
+        "first_indexing": "Prima indicizzazione in corso...",
+        "indexing_status": "Indicizzazione...", "indexing_stopped": "Indicizzazione interrotta",
+    },
+    "Japanese": {
+        "search": "検索", "index_status": "インデックス状態", "settings": "設定",
+        "desktop_search": "デスクトップ検索",
+        "search_placeholder": "ファイル、コード、ドキュメントを検索...",
+        "all": "すべて", "documents": "ドキュメント", "images": "画像",
+        "code": "コード", "archives": "アーカイブ", "pdfs": "PDF",
+        "relevance": "関連性", "name": "名前", "size": "サイズ", "newest": "最新",
+        "ready_to_search": "検索の準備完了",
+        "type_query": "クエリを入力してEnterを押してください",
+        "no_results": "結果なし", "try_different": "別の検索語をお試しください",
+        "results": "件の結果", "select_file": "ファイルを選択",
+        "no_preview": "プレビューできません:",
+        "open_file": "ファイルを開く", "show_folder": "フォルダに表示",
+        "copy_path": "パスをコピー",
+        "index_title": "インデックス状態",
+        "index_desc": "検索データベースを監視し、ファイルのインデックスを管理します。",
+        "rebuild_index": "インデックスを再構築", "current_progress": "現在の進捗",
+        "db_stats": "データベース統計", "db_size": "データベースサイズ",
+        "last_indexed": "最終インデックス", "search_latency": "検索レイテンシ",
+        "speed": "速度", "duration": "所要時間", "files": "ファイル数",
+        "content_depth": "コンテンツインデックスの深さ",
+        "save_reindex": "保存して再インデックス",
+        "file_type_support": "対応ファイル形式",
+        "settings_title": "設定",
+        "settings_desc": "QuickFindの外観と動作をカスタマイズします。",
+        "appearance": "外観", "theme": "テーマ", "font_size": "フォントサイズ",
+        "search_behavior": "検索動作", "max_results": "最大結果数",
+        "open_single_click": "シングルクリックでファイルを開く",
+        "indexing": "インデックス",
+        "auto_reindex": "ファイル変更時に自動再インデックス",
+        "index_hidden": "隠しファイルとフォルダをインデックス",
+        "language": "言語", "lang_label": "言語",
+        "save_settings": "設定を保存",
+        "initializing": "初期化中...",
+        "ready": "準備完了", "files_indexed": "ファイルがインデックス済み",
+        "first_indexing": "初回インデックスを開始...",
+        "indexing_status": "インデックス中...", "indexing_stopped": "インデックス停止",
+    },
+    "Chinese": {
+        "search": "搜索", "index_status": "索引状态", "settings": "设置",
+        "desktop_search": "桌面搜索",
+        "search_placeholder": "搜索文件、代码或文档...",
+        "all": "全部", "documents": "文档", "images": "图片",
+        "code": "代码", "archives": "归档", "pdfs": "PDF",
+        "relevance": "相关性", "name": "名称", "size": "大小", "newest": "最新",
+        "ready_to_search": "准备搜索",
+        "type_query": "输入查询并按回车",
+        "no_results": "无结果", "try_different": "请尝试其他搜索词",
+        "results": "个结果", "select_file": "选择文件",
+        "no_preview": "无法预览:",
+        "open_file": "打开文件", "show_folder": "在文件夹中显示",
+        "copy_path": "复制路径",
+        "index_title": "索引状态",
+        "index_desc": "监控搜索数据库并管理文件索引。",
+        "rebuild_index": "重建索引", "current_progress": "当前进度",
+        "db_stats": "数据库统计", "db_size": "数据库大小",
+        "last_indexed": "上次索引", "search_latency": "搜索延迟",
+        "speed": "速度", "duration": "耗时", "files": "文件数",
+        "content_depth": "内容索引深度",
+        "save_reindex": "保存并重新索引",
+        "file_type_support": "支持的文件类型",
+        "settings_title": "设置",
+        "settings_desc": "自定义QuickFind的外观和行为。",
+        "appearance": "外观", "theme": "主题", "font_size": "字体大小",
+        "search_behavior": "搜索行为", "max_results": "最大结果数",
+        "open_single_click": "单击打开文件",
+        "indexing": "索引",
+        "auto_reindex": "文件更改时自动重新索引",
+        "index_hidden": "索引隐藏文件和文件夹",
+        "language": "语言", "lang_label": "语言",
+        "save_settings": "保存设置",
+        "initializing": "初始化中...",
+        "ready": "就绪", "files_indexed": "个文件已索引",
+        "first_indexing": "首次索引开始...",
+        "indexing_status": "索引中...", "indexing_stopped": "索引已停止",
+    },
+    "Korean": {
+        "search": "검색", "index_status": "인덱스 상태", "settings": "설정",
+        "desktop_search": "데스크톱 검색",
+        "search_placeholder": "파일, 코드 또는 문서 검색...",
+        "all": "전체", "documents": "문서", "images": "이미지",
+        "code": "코드", "archives": "아카이브", "pdfs": "PDF",
+        "relevance": "관련성", "name": "이름", "size": "크기", "newest": "최신",
+        "ready_to_search": "검색 준비 완료",
+        "type_query": "검색어를 입력하고 Enter를 누르세요",
+        "no_results": "결과 없음", "try_different": "다른 검색어를 시도하세요",
+        "results": "개 결과", "select_file": "파일 선택",
+        "no_preview": "미리보기 불가:",
+        "open_file": "파일 열기", "show_folder": "폴더에서 보기",
+        "copy_path": "경로 복사",
+        "index_title": "인덱스 상태",
+        "index_desc": "검색 데이터베이스를 모니터링하고 파일 인덱싱을 관리합니다.",
+        "rebuild_index": "인덱스 재구축", "current_progress": "현재 진행 상황",
+        "db_stats": "데이터베이스 통계", "db_size": "데이터베이스 크기",
+        "last_indexed": "마지막 인덱싱", "search_latency": "검색 지연",
+        "speed": "속도", "duration": "소요 시간", "files": "파일 수",
+        "content_depth": "콘텐츠 인덱싱 깊이",
+        "save_reindex": "저장 후 재인덱싱",
+        "file_type_support": "지원 파일 형식",
+        "settings_title": "설정",
+        "settings_desc": "QuickFind의 외관과 동작을 사용자 정의합니다.",
+        "appearance": "외관", "theme": "테마", "font_size": "글꼴 크기",
+        "search_behavior": "검색 동작", "max_results": "최대 결과 수",
+        "open_single_click": "한 번 클릭으로 파일 열기",
+        "indexing": "인덱싱",
+        "auto_reindex": "파일 변경 시 자동 재인덱싱",
+        "index_hidden": "숨긴 파일 및 폴더 인덱싱",
+        "language": "언어", "lang_label": "언어",
+        "save_settings": "설정 저장",
+        "initializing": "초기화 중...",
+        "ready": "준비 완료", "files_indexed": "개 파일 인덱싱됨",
+        "first_indexing": "첫 인덱싱 시작...",
+        "indexing_status": "인덱싱 중...", "indexing_stopped": "인덱싱 중지됨",
+    },
+    "Russian": {
+        "search": "Поиск", "index_status": "Состояние индекса", "settings": "Настройки",
+        "desktop_search": "Поиск на рабочем столе",
+        "search_placeholder": "Поиск файлов, кода или документов...",
+        "all": "Все", "documents": "Документы", "images": "Изображения",
+        "code": "Код", "archives": "Архивы", "pdfs": "PDF",
+        "relevance": "Релевантность", "name": "Имя", "size": "Размер", "newest": "Новые",
+        "ready_to_search": "Готов к поиску",
+        "type_query": "Введите запрос и нажмите Enter",
+        "no_results": "Нет результатов", "try_different": "Попробуйте другой поисковый запрос",
+        "results": "результатов", "select_file": "Выберите файл",
+        "no_preview": "Предварительный просмотр недоступен для",
+        "open_file": "Открыть файл", "show_folder": "Показать в папке",
+        "copy_path": "Копировать путь",
+        "index_title": "Состояние индекса",
+        "index_desc": "Мониторинг базы данных поиска и управление индексацией файлов.",
+        "rebuild_index": "Перестроить индекс", "current_progress": "Текущий прогресс",
+        "db_stats": "Статистика базы данных", "db_size": "Размер базы данных",
+        "last_indexed": "Последняя индексация", "search_latency": "Задержка поиска",
+        "speed": "СКОРОСТЬ", "duration": "ДЛИТЕЛЬНОСТЬ", "files": "ФАЙЛЫ",
+        "content_depth": "Глубина индексации содержимого",
+        "save_reindex": "Сохранить и переиндексировать",
+        "file_type_support": "Поддержка типов файлов",
+        "settings_title": "Настройки",
+        "settings_desc": "Настройте внешний вид и поведение QuickFind.",
+        "appearance": "ВНЕШНИЙ ВИД", "theme": "Тема", "font_size": "Размер шрифта",
+        "search_behavior": "ПОВЕДЕНИЕ ПОИСКА", "max_results": "Макс. результатов",
+        "open_single_click": "Открывать файл одним кликом",
+        "indexing": "ИНДЕКСАЦИЯ",
+        "auto_reindex": "Автоматическая переиндексация при изменении файлов",
+        "index_hidden": "Индексировать скрытые файлы и папки",
+        "language": "ЯЗЫК", "lang_label": "Язык",
+        "save_settings": "Сохранить настройки",
+        "initializing": "Инициализация...",
+        "ready": "Готово", "files_indexed": "файлов проиндексировано",
+        "first_indexing": "Первая индексация начинается...",
+        "indexing_status": "Индексация...", "indexing_stopped": "Индексация остановлена",
+    },
+    "Arabic": {
+        "search": "بحث", "index_status": "حالة الفهرس", "settings": "الإعدادات",
+        "desktop_search": "بحث سطح المكتب",
+        "search_placeholder": "البحث عن ملفات أو أكواد أو مستندات...",
+        "all": "الكل", "documents": "المستندات", "images": "الصور",
+        "code": "الأكواد", "archives": "الأرشيف", "pdfs": "PDF",
+        "relevance": "الصلة", "name": "الاسم", "size": "الحجم", "newest": "الأحدث",
+        "ready_to_search": "جاهز للبحث",
+        "type_query": "اكتب استعلامًا واضغط Enter",
+        "no_results": "لا توجد نتائج", "try_different": "جرّب مصطلح بحث مختلف",
+        "results": "نتائج", "select_file": "اختر ملفًا",
+        "no_preview": "المعاينة غير متاحة لـ",
+        "open_file": "فتح الملف", "show_folder": "عرض في المجلد",
+        "copy_path": "نسخ المسار",
+        "index_title": "حالة الفهرس",
+        "index_desc": "راقب قاعدة بيانات البحث وأدر فهرسة الملفات.",
+        "rebuild_index": "إعادة بناء الفهرس", "current_progress": "التقدم الحالي",
+        "db_stats": "إحصائيات قاعدة البيانات", "db_size": "حجم قاعدة البيانات",
+        "last_indexed": "آخر فهرسة", "search_latency": "زمن استجابة البحث",
+        "speed": "السرعة", "duration": "المدة", "files": "الملفات",
+        "content_depth": "عمق فهرسة المحتوى",
+        "save_reindex": "حفظ وإعادة الفهرسة",
+        "file_type_support": "أنواع الملفات المدعومة",
+        "settings_title": "الإعدادات",
+        "settings_desc": "تخصيص مظهر وسلوك QuickFind.",
+        "appearance": "المظهر", "theme": "السمة", "font_size": "حجم الخط",
+        "search_behavior": "سلوك البحث", "max_results": "الحد الأقصى للنتائج",
+        "open_single_click": "فتح الملف بنقرة واحدة",
+        "indexing": "الفهرسة",
+        "auto_reindex": "إعادة الفهرسة تلقائيًا عند تغيير الملفات",
+        "index_hidden": "فهرسة الملفات والمجلدات المخفية",
+        "language": "اللغة", "lang_label": "اللغة",
+        "save_settings": "حفظ الإعدادات",
+        "initializing": "جارٍ التهيئة...",
+        "ready": "جاهز", "files_indexed": "ملفات مفهرسة",
+        "first_indexing": "بدء الفهرسة الأولى...",
+        "indexing_status": "جارٍ الفهرسة...", "indexing_stopped": "تم إيقاف الفهرسة",
+    },
+}
+
+_current_lang = "English"
+
+def tr(key):
+    return TRANSLATIONS.get(_current_lang, TRANSLATIONS["English"]).get(key, key)
+
+def set_language(lang):
+    global _current_lang
+    _current_lang = lang
 
 
 def fmt_size(s):
-    if not s:
-        return ""
+    if not s: return ""
     for u in ("B", "KB", "MB", "GB", "TB"):
-        if s < 1024:
-            return f"{s:.0f}{u}" if u == "B" else f"{s:.1f}{u}"
+        if s < 1024: return f"{s:.0f} {u}" if u == "B" else f"{s:.1f} {u}"
         s /= 1024
-    return f"{s:.1f}PB"
+    return f"{s:.1f} PB"
 
 
 def fmt_time(ts):
-    if not ts:
-        return ""
+    if not ts: return ""
     try:
         dt = datetime.fromtimestamp(ts)
         d = (datetime.now() - dt).days
-        if d == 0:   return f"Today {dt:%H:%M}"
-        if d == 1:   return "Yesterday"
-        if d < 7:    return f"{d}d ago"
-        if d < 30:   return f"{d//7}w ago"
-        if d < 365:  return f"{d//30}mo ago"
+        if d == 0: return f"Today {dt:%H:%M}"
+        if d == 1: return "Yesterday"
+        if d < 7:  return f"{d}d ago"
+        if d < 30: return f"{d // 7}w ago"
+        if d < 365: return f"{d // 30}mo ago"
         return f"{dt:%d.%m.%Y}"
     except Exception:
         return ""
+
+
+# ══════════════════════════════════════════════════════════════
+#  SETTINGS PERSISTENCE
+# ══════════════════════════════════════════════════════════════
+
+SETTINGS_PATH = os.path.join(SCRIPT_DIR, "QuickFind_Index", "settings.json")
+
+def load_settings():
+    defaults = {
+        "theme": "light",
+        "font_size": 13,
+        "show_hidden": False,
+        "auto_index": True,
+        "auto_index_interval": 2,
+        "max_results": 200,
+        "open_on_single_click": False,
+        "language": "English",
+    }
+    try:
+        with open(SETTINGS_PATH, "r") as f:
+            saved = json.load(f)
+            defaults.update(saved)
+    except Exception:
+        pass
+    return defaults
+
+def save_settings(settings):
+    os.makedirs(os.path.dirname(SETTINGS_PATH), exist_ok=True)
+    with open(SETTINGS_PATH, "w") as f:
+        json.dump(settings, f, indent=2)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -237,10 +718,10 @@ class ResultModel(QAbstractListModel):
 
 
 # ══════════════════════════════════════════════════════════════
-#  DELEGATE — Cyberpunk card rendering
+#  DELEGATE — Material Card
 # ══════════════════════════════════════════════════════════════
 
-CARD_H = 68
+CARD_H = 72
 CARD_GAP = 2
 CARD_R = 12
 
@@ -253,61 +734,28 @@ class ResultDelegate(QStyledItemDelegate):
         return QSize(option.rect.width(), CARD_H + CARD_GAP)
 
     def paint(self, painter, option, index):
-        T = self._theme()
+        t = self._theme()
         painter.save()
         painter.setRenderHint(QPainter.Antialiasing)
 
-        r = QRectF(option.rect).adjusted(12, CARD_GAP, -12, 0)
-
+        r = QRectF(option.rect).adjusted(6, CARD_GAP, -6, 0)
         sel = bool(option.state & QStyle.State_Selected)
         hov = bool(option.state & QStyle.State_MouseOver)
 
-        # ── Card background ──
         if sel:
-            bg, border, bw = T["card_selected"], T["accent"], 1.5
+            bg, border, bw = QColor(t["card_sel"]), QColor(t["primary"]), 1.0
         elif hov:
-            bg, border, bw = T["card_hover"], T["card_border_hover"], 1.0
+            bg, border, bw = QColor(t["card_hover"]), QColor(t["ov"]), 0.5
         else:
-            bg, border, bw = T["card"], T["card_border"], 0.5
+            bg, border, bw = QColor(t["white"]), QColor(t["ov"]), 0
+            border.setAlpha(40)
 
         card = QPainterPath()
         card.addRoundedRect(r, CARD_R, CARD_R)
-
-        # Fill with subtle gradient
-        grad = QLinearGradient(r.topLeft(), r.bottomRight())
-        grad.setColorAt(0, bg)
-        bg2 = QColor(bg)
-        bg2.setRed(min(255, bg.red() + 4))
-        bg2.setBlue(min(255, bg.blue() + 6))
-        grad.setColorAt(1, bg2)
-
-        painter.setPen(QPen(border, bw))
-        painter.setBrush(QBrush(grad))
+        painter.setPen(QPen(border, bw) if bw > 0 else Qt.NoPen)
+        painter.setBrush(QBrush(bg))
         painter.drawPath(card)
 
-        # Neon glow on selected
-        if sel:
-            for i, alpha in enumerate([18, 10, 5]):
-                glow_c = QColor(T["accent"])
-                glow_c.setAlpha(alpha)
-                painter.setPen(QPen(glow_c, 2 + i * 2))
-                painter.setBrush(Qt.NoBrush)
-                gp = QPainterPath()
-                gp.addRoundedRect(r.adjusted(-i, -i, i, i), CARD_R + i, CARD_R + i)
-                painter.drawPath(gp)
-
-        # Left accent bar on selected
-        if sel:
-            bar = QPainterPath()
-            bar.addRoundedRect(r.x() + 1, r.y() + 10, 3, r.height() - 20, 1.5, 1.5)
-            painter.setPen(Qt.NoPen)
-            bar_grad = QLinearGradient(0, r.y() + 10, 0, r.y() + r.height() - 10)
-            bar_grad.setColorAt(0, T["accent"])
-            bar_grad.setColorAt(1, T["accent2"])
-            painter.setBrush(QBrush(bar_grad))
-            painter.drawPath(bar)
-
-        # Data
         name = index.data(ResultModel.NameRole) or ""
         fpath = index.data(ResultModel.PathRole) or ""
         ext = index.data(ResultModel.ExtRole) or ""
@@ -315,386 +763,61 @@ class ResultDelegate(QStyledItemDelegate):
         modified = index.data(ResultModel.ModifiedRole) or 0
         is_dir = index.data(ResultModel.IsDirRole) or 0
 
-        lx = r.x() + 16
+        # Icon box
+        isz = 42
+        ix = r.x() + 14
+        iy = r.y() + (r.height() - isz) / 2
+        ir = QRectF(ix, iy, isz, isz)
+        ip = QPainterPath()
+        ip.addRoundedRect(ir, 10, 10)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(QColor(t["pc"])))
+        painter.drawPath(ip)
 
-        # ── Extension badge ──
-        ext_label = "DIR" if is_dir else EXT_LABELS.get(ext, ext.replace(".", "").upper()[:4])
-        badge_bg, badge_text = _get_badge_colors(ext, is_dir, T)
+        el = EXT_ICONS.get(ext, "DIR" if is_dir else ext.replace(".", "").upper()[:3])
+        painter.setFont(QFont(FONT_MONO, 8, QFont.Bold))
+        painter.setPen(QPen(QColor(t["opc"])))
+        painter.drawText(ir, Qt.AlignCenter, el)
 
-        if ext_label:
-            bf = QFont("Consolas", 7, QFont.Bold)
-            bfm = QFontMetrics(bf)
-            bw_px = max(bfm.horizontalAdvance(ext_label) + 12, 36)
-            bh_px = 20
-            bx = lx
-            by = r.y() + (r.height() - bh_px) / 2
+        tx = ix + isz + 12
+        max_w = r.width() - (tx - r.x()) - 100
 
-            bp = QPainterPath()
-            bp.addRoundedRect(bx, by, bw_px, bh_px, 4, 4)
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(QBrush(badge_bg))
-            painter.drawPath(bp)
+        # Name
+        painter.setFont(QFont(FONT, 11, QFont.DemiBold))
+        painter.setPen(QPen(QColor(t["on_s"])))
+        en = QFontMetrics(QFont(FONT, 11, QFont.DemiBold)).elidedText(name, Qt.ElideRight, int(max_w))
+        painter.drawText(QRectF(tx, r.y() + 14, max_w, 22), Qt.AlignLeft | Qt.AlignVCenter, en)
 
-            painter.setFont(bf)
-            painter.setPen(QPen(badge_text))
-            painter.drawText(QRectF(bx, by, bw_px, bh_px), Qt.AlignCenter, ext_label)
+        # Path
+        painter.setFont(QFont(FONT, 8))
+        painter.setPen(QPen(QColor(t["on_sv"])))
+        dp = os.path.dirname(fpath).replace("\\", " / ")
+        parts = dp.split(" / ")
+        if len(parts) > 4:
+            dp = parts[0] + " / ... / " + " / ".join(parts[-2:])
+        ep = QFontMetrics(QFont(FONT, 8)).elidedText(dp, Qt.ElideMiddle, int(max_w))
+        painter.drawText(QRectF(tx, r.y() + 38, max_w, 18), Qt.AlignLeft | Qt.AlignVCenter, ep)
 
-            tx = bx + bw_px + 14
-        else:
-            tx = lx + 8
-
-        # ── Name (Segoe UI Semibold) ──
-        nf = QFont("Segoe UI", 11, QFont.DemiBold)
-        painter.setFont(nf)
-        painter.setPen(QPen(T["text"]))
-        max_w = r.width() - (tx - r.x()) - 140
-        nr = QRectF(tx, r.y() + 13, max_w, 22)
-        en = QFontMetrics(nf).elidedText(name, Qt.ElideRight, int(max_w))
-        painter.drawText(nr, Qt.AlignLeft | Qt.AlignVCenter, en)
-
-        # ── Path (monospace for tech feel) ──
-        pf = QFont("Consolas", 8)
-        painter.setFont(pf)
-        painter.setPen(QPen(T["text_muted"]))
-        dp = os.path.dirname(fpath)
-        pr = QRectF(tx, r.y() + 37, max_w, 18)
-        ep = QFontMetrics(pf).elidedText(dp, Qt.ElideMiddle, int(max_w))
-        painter.drawText(pr, Qt.AlignLeft | Qt.AlignVCenter, ep)
-
-        # ── Right: size with monospace ──
-        rx = r.x() + r.width() - 130
+        # Size + time
+        rx = r.x() + r.width() - 90
         sz = fmt_size(size)
         if sz and not is_dir:
-            sf = QFont("Consolas", 9, QFont.Medium)
-            painter.setFont(sf)
-            painter.setPen(QPen(T["text_sec"]))
-            painter.drawText(QRectF(rx, r.y() + 14, 120, 20), Qt.AlignRight | Qt.AlignVCenter, sz)
+            painter.setFont(QFont(FONT, 9))
+            painter.setPen(QPen(QColor(t["on_sv"])))
+            painter.drawText(QRectF(rx, r.y() + 14, 80, 20), Qt.AlignRight | Qt.AlignVCenter, sz)
 
-        # ── Right: time ──
         tm = fmt_time(modified)
         if tm:
-            tf = QFont("Consolas", 8)
-            painter.setFont(tf)
-            painter.setPen(QPen(T["text_muted"]))
-            painter.drawText(QRectF(rx, r.y() + 36, 120, 18), Qt.AlignRight | Qt.AlignVCenter, tm)
+            painter.setFont(QFont(FONT, 8))
+            painter.setPen(QPen(QColor(t["outline"])))
+            painter.drawText(QRectF(rx, r.y() + 38, 80, 18), Qt.AlignRight | Qt.AlignVCenter, tm)
 
         painter.restore()
 
 
 # ══════════════════════════════════════════════════════════════
-#  TECH BACKGROUND — Grid + floating orbs
-# ══════════════════════════════════════════════════════════════
-
-class TechBackground(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._tick = 0
-        self._theme_colors = THEMES["dark"]
-        self._timer = QTimer(self)
-        self._timer.timeout.connect(self._animate)
-        self._timer.start(40)
-        self.setAttribute(Qt.WA_TransparentForMouseEvents)
-
-    def set_theme(self, T):
-        self._theme_colors = T
-        self.update()
-
-    def _animate(self):
-        self._tick += 1
-        self.update()
-
-    def paintEvent(self, event):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-        w, h = self.width(), self.height()
-
-        T = self._theme_colors
-
-        # ── Subtle grid lines (hidden in light theme via alpha 0) ──
-        grid_c = T["grid_line"]
-        if grid_c.alpha() > 0:
-            p.setPen(QPen(grid_c, 0.5))
-            spacing = 48
-            for x in range(0, w, spacing):
-                p.drawLine(x, 0, x, h)
-            for y in range(0, h, spacing):
-                p.drawLine(0, y, w, y)
-
-        # ── Floating orbs ──
-        t = self._tick * 0.02
-        orbs = [
-            (0.3 + math.sin(t * 0.7) * 0.15, 0.25 + math.cos(t * 0.5) * 0.1, w * 0.35, T["glow1"]),
-            (0.7 + math.sin(t * 0.5 + 2) * 0.12, 0.6 + math.cos(t * 0.8 + 1) * 0.15, w * 0.28, T["glow2"]),
-            (0.5 + math.cos(t * 0.6 + 4) * 0.2, 0.8 + math.sin(t * 0.4 + 3) * 0.1, w * 0.22, T["glow3"]),
-        ]
-        for ox, oy, radius, color in orbs:
-            cx, cy = ox * w, oy * h
-            grad = QRadialGradient(cx, cy, radius)
-            grad.setColorAt(0, color)
-            grad.setColorAt(1, QColor(0, 0, 0, 0))
-            p.setPen(Qt.NoPen)
-            p.setBrush(QBrush(grad))
-            p.drawEllipse(QPointF(cx, cy), radius, radius)
-
-        # ── Scan line effect ──
-        scan_y = (self._tick * 2) % (h + 60) - 30
-        scan_grad = QLinearGradient(0, scan_y - 30, 0, scan_y + 30)
-        scan_grad.setColorAt(0, QColor(0, 0, 0, 0))
-        scan_grad.setColorAt(0.5, QColor(100, 60, 255, 8))
-        scan_grad.setColorAt(1, QColor(0, 0, 0, 0))
-        p.setBrush(QBrush(scan_grad))
-        p.drawRect(0, int(scan_y - 30), w, 60)
-
-        p.end()
-
-
-# ══════════════════════════════════════════════════════════════
-#  NEON SEARCH BAR
-# ══════════════════════════════════════════════════════════════
-
-class NeonSearchBar(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._focused = False
-        self._glow_alpha = 0
-        self._theme_colors = THEMES["dark"]
-        self._timer = QTimer(self)
-        self._timer.timeout.connect(self._animate_glow)
-        self._timer.start(30)
-
-    def set_focused(self, focused):
-        self._focused = focused
-        self.update()
-
-    def set_theme(self, T):
-        self._theme_colors = T
-        self.update()
-
-    def _animate_glow(self):
-        target = 255 if self._focused else 0
-        diff = target - self._glow_alpha
-        if abs(diff) > 2:
-            self._glow_alpha += diff * 0.15
-            self.update()
-        elif self._glow_alpha != target:
-            self._glow_alpha = target
-            self.update()
-
-    def paintEvent(self, event):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-        r = QRectF(self.rect()).adjusted(4, 4, -4, -4)
-
-        T = self._theme_colors
-
-        # Glow when focused
-        if self._glow_alpha > 5:
-            alpha_ratio = self._glow_alpha / 255.0
-            for i in range(3):
-                gc = QColor(T["accent"])
-                gc.setAlpha(int(12 * alpha_ratio * (3 - i)))
-                gp = QPainterPath()
-                gp.addRoundedRect(r.adjusted(-i * 3, -i * 3, i * 3, i * 3), 18 + i, 18 + i)
-                p.setPen(QPen(gc, 2))
-                p.setBrush(Qt.NoBrush)
-                p.drawPath(gp)
-
-        # Main bar
-        bar = QPainterPath()
-        bar.addRoundedRect(r, 16, 16)
-        p.setPen(QPen(T["search_focus"] if self._focused else T["search_border"], 1.5))
-        p.setBrush(QBrush(T["search_bg"]))
-        p.drawPath(bar)
-
-        # Gradient top border accent
-        if self._glow_alpha > 5:
-            alpha_ratio = self._glow_alpha / 255.0
-            accent_grad = QLinearGradient(r.x(), r.y(), r.x() + r.width(), r.y())
-            c1 = QColor(T["accent"])
-            c1.setAlpha(int(150 * alpha_ratio))
-            c2 = QColor(T["accent2"])
-            c2.setAlpha(int(100 * alpha_ratio))
-            c3 = QColor(T["accent3"])
-            c3.setAlpha(int(80 * alpha_ratio))
-            accent_grad.setColorAt(0, c1)
-            accent_grad.setColorAt(0.5, c2)
-            accent_grad.setColorAt(1, c3)
-            p.setPen(QPen(QBrush(accent_grad), 2))
-            p.setBrush(Qt.NoBrush)
-            # Only top arc
-            top_path = QPainterPath()
-            top_path.moveTo(r.x() + 16, r.y())
-            top_path.lineTo(r.x() + r.width() - 16, r.y())
-            p.drawPath(top_path)
-
-        p.end()
-
-
-# ══════════════════════════════════════════════════════════════
 #  INDEXER THREAD
 # ══════════════════════════════════════════════════════════════
-
-# ══════════════════════════════════════════════════════════════
-#  SETTINGS DIALOG
-# ══════════════════════════════════════════════════════════════
-
-class SettingsDialog(QDialog):
-    def __init__(self, parent=None, is_dark=True):
-        super().__init__(parent)
-        self.setWindowTitle("Settings")
-        self.setFixedSize(420, 380)
-        self.setModal(True)
-
-        from database import PRESETS, get_preset_name
-
-        current = get_preset_name()
-        T = THEMES["dark" if is_dark else "light"]
-
-        bg = T["bg"].name()
-        surface = T["surface_elevated"].name()
-        text = T["text"].name()
-        text_m = T["text_muted"].name()
-        accent = T["accent"].name()
-        accent2 = T["accent2"].name()
-        border = T["card_border"].name()
-        badge_bg = T["badge_purple_bg"].name()
-
-        self.setStyleSheet(f"""
-            QDialog {{
-                background-color: {bg};
-                color: {text};
-            }}
-            QLabel {{
-                color: {text};
-                background: transparent;
-            }}
-            #section_title {{
-                color: {accent};
-                font-family: Consolas;
-                font-size: 11px;
-                font-weight: bold;
-            }}
-            #warning_label {{
-                color: {text_m};
-                font-family: Consolas;
-                font-size: 8px;
-            }}
-            QRadioButton {{
-                color: {text};
-                font-family: Consolas;
-                font-size: 10px;
-                spacing: 8px;
-                padding: 8px 12px;
-                background: {surface};
-                border: 1px solid {border};
-                border-radius: 8px;
-            }}
-            QRadioButton:checked {{
-                border-color: {accent};
-                background: {badge_bg};
-            }}
-            QRadioButton::indicator {{
-                width: 14px;
-                height: 14px;
-                border-radius: 7px;
-                border: 2px solid {text_m};
-                background: transparent;
-            }}
-            QRadioButton::indicator:checked {{
-                border-color: {accent};
-                background: qradialgradient(cx:0.5, cy:0.5, radius:0.4,
-                    fx:0.5, fy:0.5, stop:0 {accent}, stop:1 {accent2});
-            }}
-            #save_btn {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 {accent}, stop:1 {accent2});
-                color: white;
-                border: none;
-                border-radius: 10px;
-                padding: 10px 24px;
-                font-family: Consolas;
-                font-size: 11px;
-                font-weight: bold;
-            }}
-            #save_btn:hover {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 {accent2}, stop:1 {accent});
-            }}
-            #cancel_btn {{
-                background: {surface};
-                color: {text_m};
-                border: 1px solid {border};
-                border-radius: 10px;
-                padding: 10px 24px;
-                font-family: Consolas;
-                font-size: 11px;
-            }}
-        """)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 20, 24, 20)
-        layout.setSpacing(10)
-
-        title = QLabel("CONTENT INDEXING DEPTH")
-        title.setObjectName("section_title")
-        layout.addWidget(title)
-
-        warning = QLabel("// higher depth = better search accuracy, but larger database\n// changing this requires a full reindex")
-        warning.setObjectName("warning_label")
-        layout.addWidget(warning)
-        layout.addSpacing(4)
-
-        self._group = QButtonGroup(self)
-        self._radios = {}
-
-        preset_order = ["minimal", "standard", "deep", "maximum"]
-        for key in preset_order:
-            p = PRESETS[key]
-            txt = f"{key.upper()}  —  {p['label']}"
-            if key == "minimal":
-                txt += "  [default]"
-            rb = QRadioButton(txt)
-            if key == current:
-                rb.setChecked(True)
-            self._group.addButton(rb)
-            self._radios[key] = rb
-            layout.addWidget(rb)
-
-        layout.addStretch()
-
-        # Buttons
-        btn_row = QWidget()
-        btn_layout = QHBoxLayout(btn_row)
-        btn_layout.setContentsMargins(0, 0, 0, 0)
-        btn_layout.addStretch()
-
-        cancel_btn = QPushButton("CANCEL")
-        cancel_btn.setObjectName("cancel_btn")
-        cancel_btn.setCursor(QCursor(Qt.PointingHandCursor))
-        cancel_btn.clicked.connect(self.reject)
-
-        save_btn = QPushButton("SAVE & REINDEX")
-        save_btn.setObjectName("save_btn")
-        save_btn.setCursor(QCursor(Qt.PointingHandCursor))
-        save_btn.clicked.connect(self._save)
-
-        btn_layout.addWidget(cancel_btn)
-        btn_layout.addSpacing(8)
-        btn_layout.addWidget(save_btn)
-        layout.addWidget(btn_row)
-
-        self._selected_preset = current
-
-    def _save(self):
-        for key, rb in self._radios.items():
-            if rb.isChecked():
-                self._selected_preset = key
-                break
-        self.accept()
-
-    def get_selected_preset(self):
-        return self._selected_preset
-
 
 class IndexerThread(QThread):
     progress = Signal(int)
@@ -723,15 +846,1091 @@ class IndexerThread(QThread):
 
 
 # ══════════════════════════════════════════════════════════════
+#  SIDEBAR
+# ══════════════════════════════════════════════════════════════
+
+class Sidebar(QWidget):
+    page_changed = Signal(int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedWidth(180)
+        self._buttons = []
+        self._active = 0
+        self._build()
+
+    def _build(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 16, 12, 16)
+        layout.setSpacing(4)
+
+        # Logo
+        title = QLabel("QuickFind")
+        title.setFont(QFont(FONT, 14, QFont.ExtraBold))
+        layout.addWidget(title)
+
+        sub = QLabel("Desktop Search")
+        sub.setFont(QFont(FONT, 8))
+        sub.setObjectName("sidebar_sub")
+        layout.addWidget(sub)
+        layout.addSpacing(20)
+
+        pages = [("Search", 0), ("Index Status", 1), ("Settings", 2)]
+        for label, idx in pages:
+            btn = QPushButton(label)
+            btn.setFont(QFont(FONT, 10, QFont.Medium))
+            btn.setFixedHeight(38)
+            btn.setCursor(QCursor(Qt.PointingHandCursor))
+            btn.setCheckable(True)
+            if idx == 0:
+                btn.setChecked(True)
+            btn.clicked.connect(lambda checked, i=idx: self._on_click(i))
+            layout.addWidget(btn)
+            self._buttons.append(btn)
+
+        layout.addStretch()
+
+    def _on_click(self, idx):
+        self._active = idx
+        for i, btn in enumerate(self._buttons):
+            btn.setChecked(i == idx)
+        self.page_changed.emit(idx)
+
+
+# ══════════════════════════════════════════════════════════════
+#  PAGE: SEARCH
+# ══════════════════════════════════════════════════════════════
+
+class SearchPage(QWidget):
+    def __init__(self, db, theme_getter, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self._theme = theme_getter
+        self._active_filter = None
+        self._active_sort = "relevance"
+        self._filter_map = {}
+        self.max_results = 200
+        self._build()
+
+    def _build(self):
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Left: search + results
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setContentsMargins(24, 16, 12, 0)
+        ll.setSpacing(6)
+
+        # Search bar
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Search for files, code, or documents...")
+        self.search_input.setFont(QFont(FONT, 13))
+        self.search_input.setFixedHeight(48)
+        self.search_input.setObjectName("search_input")
+        self.search_input.returnPressed.connect(self._do_search)
+        ll.addWidget(self.search_input)
+
+        # Filters
+        fr = QWidget()
+        fr_l = QHBoxLayout(fr)
+        fr_l.setContentsMargins(0, 2, 0, 0)
+        fr_l.setSpacing(5)
+
+        self._filter_buttons = {}
+        FILTERS = {
+            "All":       None,
+            "Documents": [".pdf", ".docx", ".doc", ".rtf", ".txt", ".md", ".epub", ".rst"],
+            "Images":    [".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".bmp"],
+            "Code":      [".py", ".js", ".ts", ".jsx", ".tsx", ".html", ".css", ".java",
+                          ".cpp", ".c", ".cs", ".go", ".rs", ".rb", ".php"],
+            "Archives":  [".zip", ".rar", ".7z", ".tar", ".gz", ".exe", ".msi"],
+            "PDFs":      [".pdf"],
+        }
+        self._filter_map = FILTERS
+
+        for label in FILTERS:
+            btn = QPushButton(label)
+            btn.setFont(QFont(FONT, 9))
+            btn.setFixedHeight(28)
+            btn.setCursor(QCursor(Qt.PointingHandCursor))
+            btn.setCheckable(True)
+            if label == "All": btn.setChecked(True)
+            btn.clicked.connect(lambda c, l=label: self._set_filter(l))
+            fr_l.addWidget(btn)
+            self._filter_buttons[label] = btn
+        fr_l.addStretch()
+
+        # Sort
+        self._sort_buttons = {}
+        SORTS = {"Relevance": "relevance", "Name": "name_asc", "Size": "size_desc", "Newest": "date_new"}
+        for label, key in SORTS.items():
+            btn = QPushButton(label)
+            btn.setFont(QFont(FONT, 8))
+            btn.setFixedHeight(28)
+            btn.setCursor(QCursor(Qt.PointingHandCursor))
+            btn.setCheckable(True)
+            if key == "relevance": btn.setChecked(True)
+            btn.clicked.connect(lambda c, k=key: self._set_sort(k))
+            fr_l.addWidget(btn)
+            self._sort_buttons[key] = btn
+
+        ll.addWidget(fr)
+
+        # Stats
+        stats = QWidget()
+        sl = QHBoxLayout(stats)
+        sl.setContentsMargins(2, 0, 2, 0)
+        self.result_count = QLabel("")
+        self.result_count.setFont(QFont(FONT, 9, QFont.Bold))
+        self.result_count.setObjectName("result_count")
+        self.search_time = QLabel("")
+        self.search_time.setFont(QFont(FONT, 9))
+        self.search_time.setObjectName("search_time")
+        sl.addWidget(self.result_count)
+        sl.addStretch()
+        sl.addWidget(self.search_time)
+        ll.addWidget(stats)
+
+        # Results
+        self.model = ResultModel()
+        self.delegate = ResultDelegate(self._theme)
+        self.list_view = QListView()
+        self.list_view.setModel(self.model)
+        self.list_view.setItemDelegate(self.delegate)
+        self.list_view.setVerticalScrollMode(QListView.ScrollPerPixel)
+        self.list_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.list_view.setSelectionMode(QListView.SingleSelection)
+        self.list_view.setMouseTracking(True)
+        self.list_view.setFrameShape(QListView.NoFrame)
+        self.list_view.setUniformItemSizes(True)
+        self.list_view.doubleClicked.connect(self._on_double_click)
+        self.list_view.selectionModel().currentChanged.connect(self._on_sel)
+        ll.addWidget(self.list_view)
+
+        # Empty state
+        self.empty = QWidget()
+        el = QVBoxLayout(self.empty)
+        el.setAlignment(Qt.AlignCenter)
+        self.empty_title = QLabel("Ready to Search")
+        self.empty_title.setFont(QFont(FONT, 20, QFont.Bold))
+        self.empty_title.setAlignment(Qt.AlignCenter)
+        self.empty_sub = QLabel("Type a query and press Enter")
+        self.empty_sub.setFont(QFont(FONT, 10))
+        self.empty_sub.setAlignment(Qt.AlignCenter)
+        self.empty_sub.setObjectName("empty_sub")
+        el.addWidget(self.empty_title)
+        el.addWidget(self.empty_sub)
+        ll.addWidget(self.empty)
+        self.list_view.hide()
+        self.empty.show()
+
+        layout.addWidget(left, 1)
+
+        # Right: detail pane
+        self.detail = QWidget()
+        self.detail.setFixedWidth(280)
+        self.detail.setObjectName("detail_pane")
+        dl = QVBoxLayout(self.detail)
+        dl.setContentsMargins(16, 20, 16, 16)
+        dl.setSpacing(10)
+
+        # Preview area
+        self.preview_frame = QWidget()
+        self.preview_frame.setMinimumHeight(140)
+        self.preview_frame.setMaximumHeight(220)
+        self.preview_frame.setObjectName("preview_frame")
+        pfl = QVBoxLayout(self.preview_frame)
+        pfl.setContentsMargins(10, 8, 10, 8)
+        pfl.setSpacing(4)
+
+        self.preview_icon = QLabel("")
+        self.preview_icon.setFont(QFont(FONT_MONO, 28, QFont.Bold))
+        self.preview_icon.setAlignment(Qt.AlignCenter)
+        self.preview_icon.setObjectName("preview_icon")
+        self.preview_icon.setFixedHeight(50)
+        pfl.addWidget(self.preview_icon)
+
+        self.preview_scroll = QScrollArea()
+        self.preview_scroll.setWidgetResizable(True)
+        self.preview_scroll.setFrameShape(QFrame.NoFrame)
+        self.preview_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.preview_scroll.setStyleSheet("background: transparent; border: none;")
+
+        self.preview_text = QLabel("No preview available")
+        self.preview_text.setFont(QFont(FONT, 8))
+        self.preview_text.setAlignment(Qt.AlignCenter)
+        self.preview_text.setObjectName("preview_text")
+        self.preview_text.setWordWrap(True)
+        self.preview_text.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.preview_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        self.preview_scroll.setWidget(self.preview_text)
+        pfl.addWidget(self.preview_scroll, 1)
+        dl.addWidget(self.preview_frame)
+
+        # File name
+        self.d_name = QLabel("Select a file")
+        self.d_name.setFont(QFont(FONT, 12, QFont.Bold))
+        self.d_name.setWordWrap(True)
+        dl.addWidget(self.d_name)
+
+        self.d_type = QLabel("")
+        self.d_type.setFont(QFont(FONT, 9, QFont.Medium))
+        self.d_type.setObjectName("d_type")
+        dl.addWidget(self.d_type)
+
+        dl.addSpacing(4)
+
+        # Info rows
+        self.d_size = self._info_row(dl, "SIZE")
+        self.d_modified = self._info_row(dl, "MODIFIED")
+        self.d_ext = self._info_row(dl, "EXTENSION")
+        self.d_path = self._info_row(dl, "PATH", mono=True)
+
+        dl.addSpacing(8)
+
+        # Buttons
+        self.open_btn = QPushButton("Open File")
+        self.open_btn.setObjectName("open_btn")
+        self.open_btn.setFont(QFont(FONT, 10, QFont.DemiBold))
+        self.open_btn.setFixedHeight(40)
+        self.open_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        self.open_btn.clicked.connect(self._open_file)
+        dl.addWidget(self.open_btn)
+
+        self.folder_btn = QPushButton("Show in Folder")
+        self.folder_btn.setObjectName("folder_btn")
+        self.folder_btn.setFont(QFont(FONT, 10, QFont.DemiBold))
+        self.folder_btn.setFixedHeight(40)
+        self.folder_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        self.folder_btn.clicked.connect(self._open_folder)
+        dl.addWidget(self.folder_btn)
+
+        self.copy_btn = QPushButton("Copy File Path")
+        self.copy_btn.setObjectName("copy_btn")
+        self.copy_btn.setFont(QFont(FONT, 9))
+        self.copy_btn.setFixedHeight(32)
+        self.copy_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        self.copy_btn.clicked.connect(self._copy_path)
+        dl.addWidget(self.copy_btn)
+
+        dl.addStretch()
+
+        layout.addWidget(self.detail)
+        self._current_path = ""
+
+    def _info_row(self, parent, label, mono=False):
+        row = QWidget()
+        rl = QHBoxLayout(row)
+        rl.setContentsMargins(0, 2, 0, 2)
+        lbl = QLabel(label)
+        lbl.setFont(QFont(FONT, 8, QFont.Bold))
+        lbl.setFixedWidth(75)
+        lbl.setObjectName("info_label")
+        val = QLabel("—")
+        val.setFont(QFont(FONT_MONO if mono else FONT, 9))
+        val.setWordWrap(True)
+        rl.addWidget(lbl)
+        rl.addWidget(val, 1)
+        parent.addWidget(row)
+        return val
+
+    def _set_filter(self, label):
+        for n, b in self._filter_buttons.items():
+            b.setChecked(n == label)
+        self._active_filter = self._filter_map.get(label)
+        if self.search_input.text().strip() or self._active_filter:
+            self._do_search()
+
+    def _set_sort(self, key):
+        for k, b in self._sort_buttons.items():
+            b.setChecked(k == key)
+        self._active_sort = key
+        if self.search_input.text().strip() or self._active_filter:
+            self._do_search()
+
+    def _do_search(self):
+        q = self.search_input.text().strip()
+        if not q and not self._active_filter:
+            self.model.clear()
+            self.list_view.hide()
+            self.empty.show()
+            self.result_count.setText("")
+            self.search_time.setText("")
+            return
+
+        t0 = time.perf_counter()
+        results = self.db.search(q, limit=self.max_results, ext_filter=self._active_filter, sort=self._active_sort)
+        ms = (time.perf_counter() - t0) * 1000
+
+        if results:
+            self.model.set_results(results)
+            self.empty.hide()
+            self.list_view.show()
+            self.list_view.setCurrentIndex(self.model.index(0))
+        else:
+            self.model.clear()
+            self.list_view.hide()
+            self.empty.show()
+            self.empty_title.setText("No Results")
+            self.empty_sub.setText("Try a different search term")
+
+        self.result_count.setText(f"{len(results)} results")
+        self.search_time.setText(f"{ms:.1f} ms")
+
+    def _on_sel(self, current, previous):
+        if not current.isValid():
+            return
+        name = current.data(ResultModel.NameRole) or ""
+        path = current.data(ResultModel.PathRole) or ""
+        ext = current.data(ResultModel.ExtRole) or ""
+        size = current.data(ResultModel.SizeRole) or 0
+        modified = current.data(ResultModel.ModifiedRole) or 0
+        self._current_path = path
+
+        self.d_name.setText(name)
+        self.d_type.setText(TYPE_NAMES.get(ext, ext.upper().replace(".", "") + " File" if ext else "File"))
+        self.d_size.setText(fmt_size(size))
+        self.d_ext.setText(ext or "—")
+        self.d_path.setText(os.path.dirname(path))
+        el = EXT_ICONS.get(ext, ext.replace(".", "").upper()[:3] if ext else "?")
+
+        # Reset preview
+        self.preview_icon.show()
+        self.preview_icon.setFixedHeight(50)
+        self.preview_icon.setText(el)
+
+        # Content preview
+        TEXT_EXTS = {".txt", ".md", ".py", ".js", ".ts", ".html", ".css", ".json", ".xml",
+                     ".yaml", ".yml", ".csv", ".sql", ".sh", ".bat", ".ps1", ".ini", ".cfg",
+                     ".log", ".java", ".cpp", ".c", ".cs", ".go", ".rs", ".rb", ".php",
+                     ".jsx", ".tsx", ".vue", ".toml", ".conf", ".rst", ".tex"}
+        RICH_EXTS = {".pdf", ".docx", ".xlsx", ".pptx", ".rtf", ".epub"}
+
+        preview_ok = False
+        if os.path.exists(path) and (size is None or size < 2_000_000):
+            if ext in TEXT_EXTS:
+                try:
+                    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                        preview = f.read(1000)
+                    if preview.strip():
+                        self.preview_icon.hide()
+                        self.preview_icon.setFixedHeight(0)
+                        self.preview_text.setText(preview[:600])
+                        self.preview_text.setFont(QFont(FONT_MONO, 7))
+                        self.preview_text.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+                        preview_ok = True
+                except Exception:
+                    pass
+            elif ext in RICH_EXTS:
+                try:
+                    from database import RICH_READERS
+                    reader = RICH_READERS.get(ext)
+                    if reader:
+                        content = reader(path)
+                        if content and len(content.strip()) > 0:
+                            self.preview_icon.hide()
+                            self.preview_icon.setFixedHeight(0)
+                            self.preview_text.setText(content[:600])
+                            self.preview_text.setFont(QFont(FONT, 8))
+                            self.preview_text.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+                            self.preview_text.setWordWrap(True)
+                            preview_ok = True
+                except Exception as e:
+                    self.preview_text.setText(f"Preview error: {e}")
+                    self.preview_text.setAlignment(Qt.AlignCenter)
+
+        if not preview_ok:
+            self.preview_text.setText(tr("no_preview") + f" {ext.upper().replace('.', '')}" if ext else "")
+            self.preview_text.setFont(QFont(FONT, 8))
+            self.preview_text.setAlignment(Qt.AlignCenter)
+
+        if modified:
+            try:
+                dt = datetime.fromtimestamp(modified)
+                self.d_modified.setText(dt.strftime("%b %d, %Y  %H:%M"))
+            except Exception:
+                self.d_modified.setText("—")
+
+    def _on_double_click(self, index):
+        path = self.model.get_path(index.row())
+        if path:
+            try:
+                os.startfile(path)
+            except Exception:
+                pass
+
+    def _open_file(self):
+        if self._current_path and os.path.exists(self._current_path):
+            os.startfile(self._current_path)
+
+    def _open_folder(self):
+        if self._current_path:
+            try:
+                if os.path.exists(self._current_path):
+                    subprocess.Popen(["explorer", "/select,", self._current_path])
+                elif os.path.exists(os.path.dirname(self._current_path)):
+                    os.startfile(os.path.dirname(self._current_path))
+            except Exception:
+                pass
+
+    def _copy_path(self):
+        if self._current_path:
+            QApplication.clipboard().setText(self._current_path)
+
+
+# ══════════════════════════════════════════════════════════════
+#  PAGE: INDEX STATUS
+# ══════════════════════════════════════════════════════════════
+
+class IndexStatusPage(QWidget):
+    reindex_requested = Signal()
+
+    def __init__(self, db, theme_getter, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self._theme = theme_getter
+        self._build()
+
+    def _build(self):
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+
+        content = QWidget()
+        ml = QVBoxLayout(content)
+        ml.setContentsMargins(32, 24, 32, 24)
+        ml.setSpacing(20)
+
+        # Header
+        hdr = QWidget()
+        hl = QHBoxLayout(hdr)
+        hl.setContentsMargins(0, 0, 0, 0)
+
+        tw = QWidget()
+        tl = QVBoxLayout(tw)
+        tl.setContentsMargins(0, 0, 0, 0)
+        tl.setSpacing(4)
+        self.title_label = QLabel("Index Status")
+        self.title_label.setFont(QFont(FONT, 24, QFont.ExtraBold))
+        self.desc_label = QLabel("Monitor your search database and manage file indexing.")
+        self.desc_label.setFont(QFont(FONT, 11))
+        self.desc_label.setObjectName("page_desc")
+        tl.addWidget(self.title_label)
+        tl.addWidget(self.desc_label)
+        hl.addWidget(tw, 1)
+
+        self.rebuild_btn = QPushButton("Rebuild Index")
+        self.rebuild_btn.setObjectName("primary_btn")
+        self.rebuild_btn.setFont(QFont(FONT, 10, QFont.Bold))
+        self.rebuild_btn.setFixedHeight(40)
+        self.rebuild_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        self.rebuild_btn.clicked.connect(self.reindex_requested.emit)
+        hl.addWidget(self.rebuild_btn)
+        ml.addWidget(hdr)
+
+        # Progress + Stats row
+        row1 = QWidget()
+        r1l = QHBoxLayout(row1)
+        r1l.setContentsMargins(0, 0, 0, 0)
+        r1l.setSpacing(16)
+
+        # Progress card
+        prog_card = QFrame()
+        prog_card.setFrameShape(QFrame.StyledPanel)
+        prog_card.setObjectName("card")
+        pcl = QVBoxLayout(prog_card)
+        pcl.setContentsMargins(20, 16, 20, 16)
+        pcl.setSpacing(10)
+
+        ph = QWidget()
+        phl = QHBoxLayout(ph)
+        phl.setContentsMargins(0, 0, 0, 0)
+        self.progress_title = QLabel("Current Progress")
+        self.progress_title.setFont(QFont(FONT, 14, QFont.Bold))
+        pl = self.progress_title
+        self.progress_badge = QLabel("READY")
+        self.progress_badge.setFont(QFont(FONT, 8, QFont.Bold))
+        self.progress_badge.setObjectName("progress_badge")
+        phl.addWidget(pl)
+        phl.addStretch()
+        phl.addWidget(self.progress_badge)
+        pcl.addWidget(ph)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setFixedHeight(10)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setValue(100)
+        pcl.addWidget(self.progress_bar)
+
+        self.progress_detail = QLabel("")
+        self.progress_detail.setFont(QFont(FONT, 9))
+        self.progress_detail.setObjectName("page_desc")
+        pcl.addWidget(self.progress_detail)
+
+        # Stat boxes
+        stat_row = QWidget()
+        srl = QHBoxLayout(stat_row)
+        srl.setContentsMargins(0, 4, 0, 0)
+        srl.setSpacing(10)
+
+        self.stat_speed = self._stat_box(srl, "SPEED", "—")
+        self.stat_time = self._stat_box(srl, "DURATION", "—")
+        self.stat_queue = self._stat_box(srl, "FILES", "0")
+        pcl.addWidget(stat_row)
+
+        r1l.addWidget(prog_card, 2)
+
+        # DB Stats card
+        db_card = QFrame()
+        db_card.setFrameShape(QFrame.StyledPanel)
+        db_card.setObjectName("card")
+        dcl = QVBoxLayout(db_card)
+        dcl.setContentsMargins(20, 16, 20, 16)
+        dcl.setSpacing(10)
+
+        self.db_stats_title = QLabel("Database Stats")
+        self.db_stats_title.setFont(QFont(FONT, 14, QFont.Bold))
+        dbl = self.db_stats_title
+        dcl.addWidget(dbl)
+
+        self.db_size_val = self._db_row(dcl, "Database Size", "—")
+        self.db_created_val = self._db_row(dcl, "Last Indexed", "—")
+        self.db_latency_val = self._db_row(dcl, "Search Latency", "< 1ms")
+
+        r1l.addWidget(db_card, 1)
+        ml.addWidget(row1)
+
+        # Content depth presets
+        self.depth_title = QLabel("Content Indexing Depth")
+        self.depth_title.setFont(QFont(FONT, 16, QFont.Bold))
+        depth_lbl = self.depth_title
+        ml.addWidget(depth_lbl)
+
+        from database import PRESETS, get_preset_name
+        current = get_preset_name()
+        self._preset_group = QButtonGroup(self)
+        self._preset_radios = {}
+
+        for key in ["minimal", "standard", "deep", "maximum"]:
+            p = PRESETS[key]
+            rb = QRadioButton(f"{key.capitalize()}  —  {p['label']}")
+            if key == current: rb.setChecked(True)
+            self._preset_group.addButton(rb)
+            self._preset_radios[key] = rb
+            ml.addWidget(rb)
+
+        self.save_preset_btn = QPushButton("Save & Reindex")
+        save_preset_btn = self.save_preset_btn
+        save_preset_btn.setObjectName("primary_btn")
+        save_preset_btn.setFont(QFont(FONT, 10, QFont.Bold))
+        save_preset_btn.setFixedHeight(38)
+        save_preset_btn.setFixedWidth(180)
+        save_preset_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        save_preset_btn.clicked.connect(self._save_preset)
+        ml.addWidget(save_preset_btn)
+
+        # File types
+        self.ft_title = QLabel("File Type Support")
+        self.ft_title.setFont(QFont(FONT, 16, QFont.Bold))
+        ft = self.ft_title
+        ml.addWidget(ft)
+
+        ftr = QWidget()
+        ftl = QHBoxLayout(ftr)
+        ftl.setContentsMargins(0, 0, 0, 0)
+        ftl.setSpacing(10)
+        for name, exts in [("Documents", "PDF, DOCX, TXT"), ("Data", "XLSX, CSV, JSON"),
+                           ("Code", "PY, JS, HTML, CPP"), ("Images", "JPG, PNG (Meta)")]:
+            c = QFrame()
+            c.setFrameShape(QFrame.StyledPanel)
+            c.setObjectName("type_chip")
+            cl = QVBoxLayout(c)
+            cl.setContentsMargins(14, 8, 14, 8)
+            cl.setSpacing(2)
+            cn = QLabel(name)
+            cn.setFont(QFont(FONT, 10, QFont.Bold))
+            ce = QLabel(exts)
+            ce.setFont(QFont(FONT, 8))
+            ce.setObjectName("page_desc")
+            cl.addWidget(cn)
+            cl.addWidget(ce)
+            ftl.addWidget(c)
+        ftl.addStretch()
+        ml.addWidget(ftr)
+
+        ml.addStretch()
+        scroll.setWidget(content)
+        self._scroll = scroll
+        self._content = content
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(scroll)
+
+    def apply_theme(self, t):
+        bg = t["bg"]
+        white = t["white"]
+        primary = t["primary"]
+        on_primary = t["on_primary"]
+        on_s = t["on_s"]
+        on_sv = t["on_sv"]
+        ov = t["ov"]
+        pc = t["pc"]
+        scl = t["scl"]
+        divider = t["divider"]
+
+        self.setStyleSheet(f"""
+            QLabel {{ color: {on_s}; background: transparent; }}
+            QFrame#card {{
+                background: {white};
+                border: 1px solid {divider};
+                border-radius: 14px;
+            }}
+            QFrame#stat_box {{
+                background: {scl};
+                border-radius: 8px;
+            }}
+            QLabel#stat_label {{ color: {on_sv}; background: transparent; }}
+            QLabel#stat_value {{ color: {primary}; background: transparent; }}
+            QLabel#page_desc {{ color: {on_sv}; background: transparent; }}
+            QLabel#progress_badge {{
+                background: {pc};
+                color: {primary};
+                border-radius: 10px;
+                padding: 3px 10px;
+            }}
+            QProgressBar {{
+                background: {pc}; border: none; border-radius: 5px;
+            }}
+            QProgressBar::chunk {{
+                background: {primary}; border-radius: 5px;
+            }}
+            QPushButton#primary_btn {{
+                background: {primary};
+                color: {on_primary};
+                border: none;
+                border-radius: 10px;
+                padding: 4px 20px;
+            }}
+            QPushButton#primary_btn:hover {{ background: {_darken(primary)}; }}
+            QPushButton#primary_btn:pressed {{ background: {_darken(_darken(primary))}; padding-top: 6px; }}
+            QFrame#type_chip {{
+                background: {white};
+                border: 1px solid {divider};
+                border-radius: 10px;
+            }}
+            QRadioButton {{
+                color: {on_s}; spacing: 8px; padding: 8px 12px;
+                background: {white}; border: 1px solid {ov}; border-radius: 10px;
+            }}
+            QRadioButton:checked {{ border-color: {primary}; background: {pc}; }}
+            QRadioButton::indicator {{
+                width: 14px; height: 14px; border-radius: 7px;
+                border: 2px solid {ov}; background: transparent;
+            }}
+            QRadioButton::indicator:checked {{ border-color: {primary}; background: {primary}; }}
+            QScrollArea {{ background: {bg}; border: none; }}
+        """)
+        from PySide6.QtGui import QPalette
+        pal_s = self._scroll.palette()
+        pal_s.setColor(QPalette.Window, QColor(bg))
+        self._scroll.setPalette(pal_s)
+        self._scroll.setAutoFillBackground(True)
+        self._scroll.setStyleSheet("border: none;")
+        if self._scroll.viewport():
+            pal_v = self._scroll.viewport().palette()
+            pal_v.setColor(QPalette.Window, QColor(bg))
+            self._scroll.viewport().setPalette(pal_v)
+            self._scroll.viewport().setAutoFillBackground(True)
+        from PySide6.QtGui import QPalette
+        pal = self._content.palette()
+        pal.setColor(QPalette.Window, QColor(bg))
+        self._content.setPalette(pal)
+        self._content.setAutoFillBackground(True)
+
+    def _stat_box(self, parent_layout, label, value):
+        w = QFrame()
+        w.setFrameShape(QFrame.StyledPanel)
+        w.setObjectName("stat_box")
+        l = QVBoxLayout(w)
+        l.setContentsMargins(12, 8, 12, 8)
+        l.setSpacing(2)
+        lbl = QLabel(label)
+        lbl.setFont(QFont(FONT, 7, QFont.Bold))
+        lbl.setObjectName("stat_label")
+        val = QLabel(value)
+        val.setFont(QFont(FONT, 16, QFont.Black))
+        val.setObjectName("stat_value")
+        l.addWidget(lbl)
+        l.addWidget(val)
+        parent_layout.addWidget(w)
+        return val
+
+    def _db_row(self, parent_layout, label, value):
+        row = QWidget()
+        rl = QHBoxLayout(row)
+        rl.setContentsMargins(0, 4, 0, 4)
+        lbl = QLabel(label)
+        lbl.setFont(QFont(FONT, 10))
+        lbl.setObjectName("page_desc")
+        val = QLabel(value)
+        val.setFont(QFont(FONT, 11, QFont.Bold))
+        rl.addWidget(lbl)
+        rl.addStretch()
+        rl.addWidget(val)
+        parent_layout.addWidget(row)
+        return val
+
+    def refresh(self):
+        count = self.db.get_file_count()
+        db_size = self.db.get_db_size_mb()
+        last_index = self.db.get_meta("last_index_time")
+        duration = self.db.get_meta("index_duration")
+
+        self.stat_queue.setText(f"{count:,}")
+        self.db_size_val.setText(f"{db_size:.0f} MB")
+        self.stat_time.setText(f"{duration}s" if duration else "—")
+
+        if last_index:
+            try:
+                dt = datetime.fromisoformat(last_index)
+                self.db_created_val.setText(dt.strftime("%b %d, %H:%M"))
+            except Exception:
+                pass
+
+    def _save_preset(self):
+        from database import get_preset_name, set_preset_name
+        for key, rb in self._preset_radios.items():
+            if rb.isChecked():
+                if key != get_preset_name():
+                    set_preset_name(key)
+                break
+        self.reindex_requested.emit()
+
+    def retranslate(self):
+        self.title_label.setText(tr("index_title"))
+        self.desc_label.setText(tr("index_desc"))
+        self.rebuild_btn.setText(tr("rebuild_index"))
+        self.progress_title.setText(tr("current_progress"))
+        self.db_stats_title.setText(tr("db_stats"))
+        self.depth_title.setText(tr("content_depth"))
+        self.ft_title.setText(tr("file_type_support"))
+        self.save_preset_btn.setText(tr("save_reindex"))
+
+
+# ══════════════════════════════════════════════════════════════
+#  PAGE: SETTINGS
+# ══════════════════════════════════════════════════════════════
+
+class SettingsPage(QWidget):
+    theme_changed = Signal(str)
+    settings_changed = Signal(dict)
+
+    def __init__(self, settings, parent=None):
+        super().__init__(parent)
+        self.settings = settings
+        self._section_labels = []
+        self._cards = []
+        self._build()
+
+    def _card(self, ml, title):
+        """Create a styled card container and return its layout."""
+        card = QFrame()
+        card.setFrameShape(QFrame.StyledPanel)
+        card.setObjectName("settings_card")
+        self._cards.append(card)
+        cl = QVBoxLayout(card)
+        cl.setContentsMargins(20, 16, 20, 16)
+        cl.setSpacing(12)
+        lbl = QLabel(title.upper())
+        lbl.setFont(QFont(FONT, 9, QFont.Bold))
+        lbl.setObjectName("card_section_title")
+        self._section_labels.append(lbl)
+        cl.addWidget(lbl)
+        ml.addWidget(card)
+        return cl
+
+    def _setting_row(self, parent_layout, label_text, right_widget):
+        row = QWidget()
+        row.setObjectName("setting_row")
+        rl = QHBoxLayout(row)
+        rl.setContentsMargins(0, 4, 0, 4)
+        lbl = QLabel(label_text)
+        lbl.setFont(QFont(FONT, 11, QFont.DemiBold))
+        rl.addWidget(lbl)
+        rl.addStretch()
+        rl.addWidget(right_widget)
+        parent_layout.addWidget(row)
+        return lbl
+
+    def _build(self):
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+
+        content = QWidget()
+        content.setObjectName("settings_content")
+        ml = QVBoxLayout(content)
+        ml.setContentsMargins(32, 24, 32, 24)
+        ml.setSpacing(16)
+
+        self.title_label = QLabel("Settings")
+        self.title_label.setFont(QFont(FONT, 24, QFont.ExtraBold))
+        ml.addWidget(self.title_label)
+        self.desc_label = QLabel("Customize QuickFind appearance and behavior.")
+        self.desc_label.setFont(QFont(FONT, 11))
+        ml.addWidget(self.desc_label)
+        ml.addSpacing(4)
+
+        # ── Appearance Card ──
+        cl = self._card(ml, "APPEARANCE")
+
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItems(["Light", "Dark", "Turquoise", "Purple"])
+        self.theme_combo.setCurrentText(self.settings.get("theme", "light").capitalize())
+        self.theme_combo.setFont(QFont(FONT, 10))
+        self.theme_combo.setFixedWidth(160)
+        self.theme_combo.setFixedHeight(34)
+        self.theme_combo.currentTextChanged.connect(lambda t: self.theme_changed.emit(t.lower()))
+        self.theme_label = self._setting_row(cl, "Theme", self.theme_combo)
+
+        font_w = QWidget()
+        fwl = QHBoxLayout(font_w)
+        fwl.setContentsMargins(0, 0, 0, 0)
+        fwl.setSpacing(8)
+        self.font_slider = QSlider(Qt.Horizontal)
+        self.font_slider.setRange(10, 18)
+        self.font_slider.setValue(self.settings.get("font_size", 13))
+        self.font_slider.setFixedWidth(140)
+        self.font_val = QLabel(str(self.font_slider.value()))
+        self.font_val.setFont(QFont(FONT, 12, QFont.Bold))
+        self.font_val.setFixedWidth(28)
+        self.font_slider.valueChanged.connect(lambda v: self.font_val.setText(str(v)))
+        fwl.addWidget(self.font_slider)
+        fwl.addWidget(self.font_val)
+        self.font_size_label = self._setting_row(cl, "Font Size", font_w)
+
+        # ── Search Behavior Card ──
+        cl2 = self._card(ml, "SEARCH BEHAVIOR")
+
+        self.max_results_combo = QComboBox()
+        self.max_results_combo.addItems(["50", "100", "200", "500", "1000"])
+        self.max_results_combo.setCurrentText(str(self.settings.get("max_results", 200)))
+        self.max_results_combo.setFont(QFont(FONT, 10))
+        self.max_results_combo.setFixedWidth(160)
+        self.max_results_combo.setFixedHeight(34)
+        self.max_results_label = self._setting_row(cl2, "Max Results", self.max_results_combo)
+
+        self.single_click = QCheckBox("Open file on single click")
+        self.single_click.setFont(QFont(FONT, 11))
+        self.single_click.setChecked(self.settings.get("open_on_single_click", False))
+        cl2.addWidget(self.single_click)
+
+        # ── Indexing Card ──
+        cl3 = self._card(ml, "INDEXING")
+
+        self.auto_index = QCheckBox("Auto-reindex when files change (file watcher)")
+        self.auto_index.setFont(QFont(FONT, 11))
+        self.auto_index.setChecked(self.settings.get("auto_index", True))
+        cl3.addWidget(self.auto_index)
+
+        self.show_hidden = QCheckBox("Index hidden files and folders")
+        self.show_hidden.setFont(QFont(FONT, 11))
+        self.show_hidden.setChecked(self.settings.get("show_hidden", False))
+        cl3.addWidget(self.show_hidden)
+
+        # ── Language Card ──
+        cl4 = self._card(ml, "LANGUAGE")
+
+        self.lang_combo = QComboBox()
+        self.lang_combo.addItems(["English", "Turkish", "German", "French", "Spanish",
+                                   "Portuguese", "Italian", "Japanese", "Chinese",
+                                   "Korean", "Russian", "Arabic"])
+        self.lang_combo.setCurrentText(self.settings.get("language", "English"))
+        self.lang_combo.setFont(QFont(FONT, 10))
+        self.lang_combo.setFixedWidth(160)
+        self.lang_combo.setFixedHeight(34)
+        self.lang_label = self._setting_row(cl4, "Language", self.lang_combo)
+
+        ml.addSpacing(8)
+
+        # Save button
+        self.save_btn = QPushButton("Save Settings")
+        self.save_btn.setFont(QFont(FONT, 11, QFont.Bold))
+        self.save_btn.setFixedHeight(44)
+        self.save_btn.setFixedWidth(200)
+        self.save_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        self.save_btn.setObjectName("save_settings_btn")
+        self.save_btn.clicked.connect(self._save)
+        ml.addWidget(self.save_btn)
+
+        ml.addStretch()
+        scroll.setWidget(content)
+        self._scroll = scroll
+        self._content = content
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(scroll)
+
+    def apply_theme(self, t):
+        """Directly apply theme colors to all widgets."""
+        bg = t["bg"]
+        white = t["white"]
+        primary = t["primary"]
+        on_primary = t["on_primary"]
+        on_s = t["on_s"]
+        on_sv = t["on_sv"]
+        ov = t["ov"]
+        pc = t["pc"]
+        divider = t["divider"]
+        sch = t["sch"]
+        dark_primary = _darken(primary) if '_darken' in dir() else primary
+
+        ss = f"""
+            QWidget#settings_content {{ background: {bg}; }}
+            QLabel {{ color: {on_s}; background: transparent; }}
+            QFrame#settings_card {{
+                background: {white};
+                border: 1px solid {divider};
+                border-radius: 14px;
+            }}
+            QLabel#card_section_title {{
+                color: {primary};
+                font-size: 10px;
+                font-weight: 700;
+                letter-spacing: 2px;
+                background: transparent;
+            }}
+            QWidget#setting_row {{ background: transparent; }}
+
+            QComboBox {{
+                background: {sch};
+                color: {on_s};
+                border: 1px solid {ov};
+                border-radius: 8px;
+                padding: 6px 12px;
+            }}
+            QComboBox::drop-down {{ border: none; width: 24px; }}
+            QComboBox QAbstractItemView {{
+                background: {white};
+                color: {on_s};
+                selection-background-color: {pc};
+                border: 1px solid {ov};
+                border-radius: 6px;
+            }}
+
+            QCheckBox {{ color: {on_s}; spacing: 10px; background: transparent; }}
+            QCheckBox::indicator {{
+                width: 20px; height: 20px;
+                border: 2px solid {ov};
+                border-radius: 5px;
+                background: transparent;
+            }}
+            QCheckBox::indicator:checked {{
+                background: {primary};
+                border-color: {primary};
+            }}
+
+            QSlider::groove:horizontal {{
+                background: {pc};
+                height: 6px;
+                border-radius: 3px;
+            }}
+            QSlider::handle:horizontal {{
+                background: {primary};
+                width: 20px; height: 20px;
+                margin: -7px 0;
+                border-radius: 10px;
+                border: 3px solid {white};
+            }}
+
+            QPushButton#save_settings_btn {{
+                background: {primary};
+                color: {on_primary};
+                border: none;
+                border-radius: 12px;
+                font-size: 12px;
+                font-weight: 700;
+            }}
+            QPushButton#save_settings_btn:hover {{
+                background: {_darken(primary)};
+            }}
+            QPushButton#save_settings_btn:pressed {{
+                background: {_darken(_darken(primary))};
+                padding-top: 3px;
+            }}
+
+            QScrollArea {{ background: {bg}; border: none; }}
+        """
+        self.setStyleSheet(ss)
+        from PySide6.QtGui import QPalette
+        pal_s = self._scroll.palette()
+        pal_s.setColor(QPalette.Window, QColor(bg))
+        self._scroll.setPalette(pal_s)
+        self._scroll.setAutoFillBackground(True)
+        self._scroll.setStyleSheet("border: none;")
+        if self._scroll.viewport():
+            pal_v = self._scroll.viewport().palette()
+            pal_v.setColor(QPalette.Window, QColor(bg))
+            self._scroll.viewport().setPalette(pal_v)
+            self._scroll.viewport().setAutoFillBackground(True)
+        from PySide6.QtGui import QPalette
+        pal = self._content.palette()
+        pal.setColor(QPalette.Window, QColor(bg))
+        self._content.setPalette(pal)
+        self._content.setAutoFillBackground(True)
+
+    def _section(self, layout, title):
+        pass  # Not used anymore — kept for compat
+        layout.addWidget(lbl)
+        if hasattr(self, '_section_labels'):
+            self._section_labels.append((lbl, title))
+
+    def retranslate(self):
+        self.title_label.setText(tr("settings_title"))
+        self.desc_label.setText(tr("settings_desc"))
+        self.theme_label.setText(tr("theme"))
+        self.font_size_label.setText(tr("font_size"))
+        self.max_results_label.setText(tr("max_results"))
+        self.lang_label.setText(tr("lang_label"))
+        self.save_btn.setText(tr("save_settings"))
+        self.single_click.setText(tr("open_single_click"))
+        self.auto_index.setText(tr("auto_reindex"))
+        self.show_hidden.setText(tr("index_hidden"))
+        # Section labels
+        section_keys = ["appearance", "search_behavior", "indexing", "language"]
+        for i, (lbl, _) in enumerate(self._section_labels):
+            if i < len(section_keys):
+                lbl.setText(tr(section_keys[i]))
+
+    def _save(self):
+        self.settings["theme"] = self.theme_combo.currentText().lower()
+        self.settings["font_size"] = self.font_slider.value()
+        self.settings["max_results"] = int(self.max_results_combo.currentText())
+        self.settings["open_on_single_click"] = self.single_click.isChecked()
+        self.settings["auto_index"] = self.auto_index.isChecked()
+        self.settings["show_hidden"] = self.show_hidden.isChecked()
+        self.settings["language"] = self.lang_combo.currentText()
+        save_settings(self.settings)
+        self.settings_changed.emit(self.settings)
+
+
+# ══════════════════════════════════════════════════════════════
 #  MAIN WINDOW
 # ══════════════════════════════════════════════════════════════
 
 class QuickFindWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.is_dark = True
-        self.T = THEMES["dark"]
-        self._theme_colors = self.T
+        self.settings = load_settings()
+        set_language(self.settings.get("language", "English"))
+        theme_name = self.settings.get("theme", "light")
+        self.is_dark = theme_name == "dark"
+        self.T = THEMES.get(theme_name, THEMES["light"])
         self._indexer_thread = None
         self._file_watcher = None
 
@@ -739,8 +1938,8 @@ class QuickFindWindow(QMainWindow):
         self.db = FileDatabase()
 
         self.setWindowTitle("QuickFind")
-        self.setMinimumSize(750, 540)
-        self.resize(920, 720)
+        self.setMinimumSize(900, 600)
+        self.resize(1100, 740)
 
         ico = os.path.join(SCRIPT_DIR, "quickfind.ico")
         if os.path.exists(ico):
@@ -758,493 +1957,384 @@ class QuickFindWindow(QMainWindow):
     def _build_ui(self):
         central = QWidget()
         self.setCentralWidget(central)
-        layout = QVBoxLayout(central)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        root = QHBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
 
-        # ── Tech background ──
-        self._bg = TechBackground(central)
-        self._bg.setGeometry(0, 0, 920, 720)
+        # Sidebar
+        self.sidebar = Sidebar()
+        self.sidebar.page_changed.connect(self._switch_page)
+        root.addWidget(self.sidebar)
 
-        # ── Header ──
+        # Main area
+        main_area = QWidget()
+        ml = QVBoxLayout(main_area)
+        ml.setContentsMargins(0, 0, 0, 0)
+        ml.setSpacing(0)
+
+        # Header bar
         self.header = QWidget()
-        self.header.setFixedHeight(72)
+        self.header.setFixedHeight(44)
+        self.header.setObjectName("header")
         hl = QHBoxLayout(self.header)
-        hl.setContentsMargins(28, 0, 22, 0)
+        hl.setContentsMargins(20, 0, 16, 0)
 
-        # Logo
-        self.logo = QLabel("⚡")
-        self.logo.setFont(QFont("Segoe UI Emoji", 24))
-        self.logo.setFixedSize(44, 44)
-        self.logo.setAlignment(Qt.AlignCenter)
+        self.page_title = QLabel("Search")
+        self.page_title.setFont(QFont(FONT, 10, QFont.DemiBold))
+        self.page_title.setObjectName("page_title")
 
-        # Title
-        tw = QWidget()
-        tl = QVBoxLayout(tw)
-        tl.setContentsMargins(12, 0, 0, 0)
-        tl.setSpacing(0)
-        self.title_label = QLabel("QUICKFIND")
-        self.title_label.setFont(QFont("Consolas", 20, QFont.Bold))
-        self.subtitle_label = QLabel("// ultra-fast file search engine")
-        self.subtitle_label.setFont(QFont("Consolas", 8))
-        tl.addStretch()
-        tl.addWidget(self.title_label)
-        tl.addWidget(self.subtitle_label)
-        tl.addStretch()
+        self.status_hint = QLabel("")
+        self.status_hint.setFont(QFont(FONT, 9))
+        self.status_hint.setObjectName("status_hint")
 
-        hl.addWidget(self.logo)
-        hl.addWidget(tw)
+        hl.addWidget(self.page_title)
+        hl.addSpacing(16)
+        hl.addWidget(self.status_hint)
         hl.addStretch()
+        ml.addWidget(self.header)
 
-        # Format indicator
-        self.formats_label = QLabel("40+ FORMATS")
-        self.formats_label.setFont(QFont("Consolas", 7, QFont.Bold))
-        self.formats_label.setFixedHeight(26)
+        # Stacked pages
+        self.stack = QStackedWidget()
 
-        hl.addWidget(self.formats_label)
-        hl.addSpacing(10)
+        self.search_page = SearchPage(self.db, self._get_theme)
+        self.index_page = IndexStatusPage(self.db, self._get_theme)
+        self.settings_page = SettingsPage(self.settings)
 
-        # Theme toggle
-        self.theme_btn = QPushButton("☀")
-        self.theme_btn.setFont(QFont("Segoe UI Emoji", 15))
-        self.theme_btn.setFixedSize(40, 40)
-        self.theme_btn.setCursor(QCursor(Qt.PointingHandCursor))
-        self.theme_btn.clicked.connect(self._toggle_theme)
+        self.index_page.reindex_requested.connect(self._reindex)
+        self.settings_page.theme_changed.connect(self._on_theme_change)
+        self.settings_page.settings_changed.connect(self._on_settings_change)
 
-        # Reindex
-        self.reindex_btn = QPushButton("⟳  REINDEX")
-        self.reindex_btn.setFont(QFont("Consolas", 9, QFont.Bold))
-        self.reindex_btn.setFixedHeight(40)
-        self.reindex_btn.setCursor(QCursor(Qt.PointingHandCursor))
-        self.reindex_btn.clicked.connect(self._reindex)
+        self.stack.addWidget(self.search_page)
+        self.stack.addWidget(self.index_page)
+        self.stack.addWidget(self.settings_page)
+        ml.addWidget(self.stack)
 
-        # Settings button
-        self.settings_btn = QPushButton("⚙")
-        self.settings_btn.setFont(QFont("Segoe UI Emoji", 15))
-        self.settings_btn.setFixedSize(40, 40)
-        self.settings_btn.setCursor(QCursor(Qt.PointingHandCursor))
-        self.settings_btn.clicked.connect(self._open_settings)
-
-        hl.addWidget(self.settings_btn)
-        hl.addSpacing(6)
-        hl.addWidget(self.theme_btn)
-        hl.addSpacing(8)
-        hl.addWidget(self.reindex_btn)
-        layout.addWidget(self.header)
-
-        # ── Gradient divider ──
-        self.divider = QFrame()
-        self.divider.setFixedHeight(2)
-        layout.addWidget(self.divider)
-
-        # ── Search area ──
-        search_area = QWidget()
-        sa_layout = QVBoxLayout(search_area)
-        sa_layout.setContentsMargins(28, 18, 28, 6)
-        sa_layout.setSpacing(6)
-
-        # Neon search bar
-        self.search_neon = NeonSearchBar(central)
-        self.search_neon.setFixedHeight(64)
-        search_inner = QHBoxLayout(self.search_neon)
-        search_inner.setContentsMargins(24, 4, 24, 4)
-        search_inner.setSpacing(12)
-
-        self.search_prefix = QLabel("›")
-        self.search_prefix.setFont(QFont("Consolas", 22, QFont.Bold))
-        self.search_prefix.setFixedWidth(20)
-
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("search files, contents, documents...")
-        self.search_input.setFont(QFont("Consolas", 14))
-        self.search_input.setFrame(False)
-        self.search_input.returnPressed.connect(self._do_search)
-        self.search_input.focusInEvent = self._on_search_focus_in
-        self.search_input.focusOutEvent = self._on_search_focus_out
-        self._original_focus_in = QLineEdit.focusInEvent
-        self._original_focus_out = QLineEdit.focusOutEvent
-
-        self.shortcut_label = QLabel("ENTER")
-        self.shortcut_label.setFont(QFont("Consolas", 7, QFont.Bold))
-        self.shortcut_label.setFixedHeight(22)
-
-        search_inner.addWidget(self.search_prefix)
-        search_inner.addWidget(self.search_input)
-        search_inner.addWidget(self.shortcut_label)
-
-        sa_layout.addWidget(self.search_neon)
-
-        # ── Filter chips ──
-        filter_row = QWidget()
-        fr_layout = QHBoxLayout(filter_row)
-        fr_layout.setContentsMargins(4, 4, 4, 0)
-        fr_layout.setSpacing(5)
-
-        self._active_filter = None
-        self._filter_buttons = {}
-
-        FILTERS = {
-            "ALL":     None,
-            "DOCS":    [".pdf", ".docx", ".doc", ".rtf", ".txt", ".md", ".epub", ".rst"],
-            "SHEETS":  [".xlsx", ".xls", ".csv"],
-            "SLIDES":  [".pptx", ".ppt"],
-            "CODE":    [".py", ".js", ".ts", ".jsx", ".tsx", ".html", ".css", ".java",
-                        ".cpp", ".c", ".cs", ".go", ".rs", ".rb", ".php", ".kt"],
-            "DATA":    [".json", ".xml", ".yaml", ".yml", ".toml", ".sql", ".ini", ".cfg"],
-            "MEDIA":   [".jpg", ".jpeg", ".png", ".gif", ".svg", ".mp4", ".mp3", ".wav"],
-            "ARCHIVE": [".zip", ".rar", ".7z", ".tar", ".gz", ".exe", ".msi"],
-        }
-        self._filter_map = FILTERS
-
-        for label in FILTERS:
-            btn = QPushButton(label)
-            btn.setFont(QFont("Consolas", 8, QFont.Bold))
-            btn.setFixedHeight(26)
-            btn.setCursor(QCursor(Qt.PointingHandCursor))
-            btn.setCheckable(True)
-            if label == "ALL":
-                btn.setChecked(True)
-            btn.clicked.connect(lambda checked, l=label: self._set_filter(l))
-            fr_layout.addWidget(btn)
-            self._filter_buttons[label] = btn
-
-        fr_layout.addStretch()
-
-        # Sort buttons
-        sep = QLabel("|")
-        sep.setFont(QFont("Consolas", 10))
-        sep.setFixedWidth(12)
-        fr_layout.addWidget(sep)
-
-        self._active_sort = "relevance"
-        self._sort_buttons = {}
-
-        SORTS = {
-            "▼ REL":   "relevance",
-            "▼ NAME":  "name_asc",
-            "▼ SIZE":  "size_desc",
-            "▼ NEW":   "date_new",
-            "▼ OLD":   "date_old",
-        }
-        self._sort_label_map = SORTS
-
-        for label, key in SORTS.items():
-            btn = QPushButton(label)
-            btn.setFont(QFont("Consolas", 7, QFont.Bold))
-            btn.setFixedHeight(26)
-            btn.setCursor(QCursor(Qt.PointingHandCursor))
-            btn.setCheckable(True)
-            if key == "relevance":
-                btn.setChecked(True)
-            btn.clicked.connect(lambda checked, k=key: self._set_sort(k))
-            fr_layout.addWidget(btn)
-            self._sort_buttons[key] = btn
-
-        sa_layout.addWidget(filter_row)
-
-        # Stats row
-        stats = QWidget()
-        stats_l = QHBoxLayout(stats)
-        stats_l.setContentsMargins(6, 0, 6, 0)
-        self.result_count_label = QLabel("")
-        self.result_count_label.setFont(QFont("Consolas", 9, QFont.Medium))
-        self.search_time_label = QLabel("")
-        self.search_time_label.setFont(QFont("Consolas", 9))
-        stats_l.addWidget(self.result_count_label)
-        stats_l.addStretch()
-        stats_l.addWidget(self.search_time_label)
-        sa_layout.addWidget(stats)
-
-        layout.addWidget(search_area)
-
-        # ── Results list ──
-        self.model = ResultModel()
-        self.delegate = ResultDelegate(self._get_theme)
-        self.list_view = QListView()
-        self.list_view.setModel(self.model)
-        self.list_view.setItemDelegate(self.delegate)
-        self.list_view.setVerticalScrollMode(QListView.ScrollPerPixel)
-        self.list_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.list_view.setSelectionMode(QListView.SingleSelection)
-        self.list_view.setMouseTracking(True)
-        self.list_view.setFrameShape(QListView.NoFrame)
-        self.list_view.doubleClicked.connect(self._on_double_click)
-        self.list_view.setUniformItemSizes(True)
-        layout.addWidget(self.list_view)
-
-        # ── Empty state ──
-        self.empty_widget = QWidget()
-        el = QVBoxLayout(self.empty_widget)
-        el.setAlignment(Qt.AlignCenter)
-        el.setSpacing(6)
-
-        self.empty_icon = QLabel("⚡")
-        self.empty_icon.setFont(QFont("Segoe UI Emoji", 44))
-        self.empty_icon.setAlignment(Qt.AlignCenter)
-
-        self.empty_title = QLabel("READY TO SEARCH")
-        self.empty_title.setFont(QFont("Consolas", 18, QFont.Bold))
-        self.empty_title.setAlignment(Qt.AlignCenter)
-
-        self.empty_sub = QLabel("// type a query and press ENTER\n// searches file names + document contents")
-        self.empty_sub.setFont(QFont("Consolas", 9))
-        self.empty_sub.setAlignment(Qt.AlignCenter)
-
-        # Format chips
-        chips_row = QWidget()
-        cr_layout = QHBoxLayout(chips_row)
-        cr_layout.setAlignment(Qt.AlignCenter)
-        cr_layout.setSpacing(5)
-        self._chips = []
-        for fmt in ["PDF", "DOCX", "XLSX", "PPTX", "EPUB", "RTF", "PY", "JS", "SQL", "+30"]:
-            chip = QLabel(fmt)
-            chip.setFont(QFont("Consolas", 7, QFont.Bold))
-            chip.setFixedHeight(24)
-            chip.setMinimumWidth(38)
-            chip.setAlignment(Qt.AlignCenter)
-            cr_layout.addWidget(chip)
-            self._chips.append(chip)
-
-        el.addWidget(self.empty_icon)
-        el.addSpacing(4)
-        el.addWidget(self.empty_title)
-        el.addWidget(self.empty_sub)
-        el.addSpacing(14)
-        el.addWidget(chips_row)
-        layout.addWidget(self.empty_widget)
-
-        # ── Status bar ──
+        # Status bar
         self.status_bar = QStatusBar()
-        self.status_bar.setFont(QFont("Consolas", 8))
-        self.status_bar.setFixedHeight(30)
+        self.status_bar.setFont(QFont(FONT, 9))
+        self.status_bar.setFixedHeight(28)
         self.setStatusBar(self.status_bar)
 
-        self.status_label = QLabel("// initializing...")
+        self.status_label = QLabel("Initializing...")
         self.idx_count_label = QLabel("")
-        from database import DB_DIR
-        self.db_path_label = QLabel(f"IDX: {DB_DIR}")
-        self.db_path_label.setFont(QFont("Consolas", 7))
         self.status_bar.addWidget(self.status_label, 1)
-        self.status_bar.addPermanentWidget(self.db_path_label)
         self.status_bar.addPermanentWidget(self.idx_count_label)
 
-        self.list_view.hide()
-        self.empty_widget.show()
-        self.search_input.setFocus()
+        root.addWidget(main_area, 1)
 
-        # Shortcuts — NO Return shortcut (it conflicts with search input)
-        QShortcut(QKeySequence("Ctrl+O"), self, self._open_in_folder)
+        # Shortcuts
+        QShortcut(QKeySequence("Ctrl+O"), self, self.search_page._open_folder)
         QShortcut(QKeySequence("Escape"), self, self._clear_search)
         QShortcut(QKeySequence("Ctrl+R"), self, self._reindex)
         QShortcut(QKeySequence("Ctrl+L"), self, self._focus_search)
-        QShortcut(QKeySequence("Ctrl+D"), self, self._toggle_theme)
+        QShortcut(QKeySequence("Ctrl+1"), self, lambda: self._switch_page(0))
+        QShortcut(QKeySequence("Ctrl+2"), self, lambda: self._switch_page(1))
+        QShortcut(QKeySequence("Ctrl+3"), self, lambda: self._switch_page(2))
 
-    def _on_search_focus_in(self, event):
-        self.search_neon.set_focused(True)
-        self._original_focus_in(self.search_input, event)
-
-    def _on_search_focus_out(self, event):
-        self.search_neon.set_focused(False)
-        self._original_focus_out(self.search_input, event)
+    def _switch_page(self, idx):
+        self.stack.setCurrentIndex(idx)
+        titles = ["Search", "Index Status", "Settings"]
+        self.page_title.setText(titles[idx])
+        if idx == 1:
+            self.index_page.refresh()
+        # Update sidebar
+        for i, btn in enumerate(self.sidebar._buttons):
+            btn.setChecked(i == idx)
 
     # ─── Theme ────────────────────────────────────────────
 
     def _apply_theme(self):
-        T = self.T
-        self._theme_colors = T
-        dk = self.is_dark
-
-        bg = T["bg"].name()
-        surface = T["surface"].name()
-        accent = T["accent"].name()
-        accent2 = T["accent2"].name()
-        accent3 = T["accent3"].name()
-        accent_h = T["accent_hover"].name()
-        text = T["text"].name()
-        text_sec = T["text_sec"].name()
-        text_m = T["text_muted"].name()
-        divider = T["divider"].name()
-        sb = T["scrollbar"].name()
-        sb_h = T["scrollbar_hover"].name()
-        s_border = T["search_border"].name()
-        badge_p_bg = T["badge_purple_bg"].name()
-        badge_p_t = T["badge_purple_text"].name()
-        badge_c_bg = T["badge_cyan_bg"].name()
-        badge_c_t = T["badge_cyan_text"].name()
-
+        t = self.T
         self.setStyleSheet(f"""
-            QMainWindow {{ background-color: {bg}; }}
+            QMainWindow {{ background: {t["bg"]}; }}
 
-            #header {{ background: transparent; }}
-
-            #divider {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 transparent, stop:0.15 {accent}, stop:0.5 {accent2}, stop:0.85 {accent3}, stop:1 transparent);
+            /* Sidebar */
+            Sidebar {{
+                background: {t["scl"]};
+                border-right: 1px solid {t["divider"]};
             }}
-
-            QLineEdit {{
+            Sidebar QLabel {{ color: {t["on_s"]}; background: transparent; }}
+            Sidebar #sidebar_sub {{ color: {t["on_sv"]}; }}
+            Sidebar QPushButton {{
                 background: transparent;
-                color: {text};
+                color: {t["on_sv"]};
                 border: none;
-                padding: 8px 0px;
-                selection-background-color: {accent};
-                selection-color: white;
+                border-radius: 8px;
+                padding: 4px 12px;
+                text-align: left;
             }}
-            QLineEdit::placeholder {{ color: {text_m}; }}
+            Sidebar QPushButton:checked {{
+                background: {t["white"]};
+                color: {t["primary"]};
+                font-weight: 700;
+            }}
+            Sidebar QPushButton:hover:!checked {{
+                background: {t["sch"]};
+            }}
 
-            #search_neon {{
-                background: transparent;
-                border: none;
+            /* Header */
+            #header {{
+                background: {t["bg"]};
+                border-bottom: 1px solid {t["divider"]};
+            }}
+            #page_title {{ color: {t["primary"]}; background: transparent; }}
+            #status_hint {{ color: {t["on_sv"]}; background: transparent; }}
+
+            /* Search */
+            #search_input {{
+                background: {t["sch"]};
+                color: {t["on_s"]};
+                border: 2px solid transparent;
+                border-radius: 14px;
+                padding: 6px 20px;
+            }}
+            #search_input:focus {{
+                border-color: {t["primary"]};
+            }}
+            #search_input::placeholder {{ color: {t["on_sv"]}; }}
+
+            /* Filter/sort chips */
+            QPushButton[checkable="true"] {{
+                background: {t["white"]};
+                color: {t["on_sv"]};
+                border: 1px solid {t["ov"]};
+                border-radius: 14px;
+                padding: 2px 12px;
+            }}
+            QPushButton[checkable="true"]:checked {{
+                background: {t["primary"]};
+                color: {t["on_primary"]};
+                border-color: {t["primary"]};
+            }}
+            QPushButton[checkable="true"]:hover:!checked {{
+                background: {t["card_hover"]};
             }}
 
-            QListView {{
-                background-color: transparent;
-                border: none;
-                outline: none;
-            }}
-            QListView::item {{ border: none; padding: 0px; }}
+            /* Results */
+            QListView {{ background: transparent; border: none; outline: none; }}
+            QListView::item {{ border: none; padding: 0; }}
             QListView::item:selected, QListView::item:hover {{ background: transparent; }}
 
-            QScrollBar:vertical {{
+            /* Detail pane */
+            #detail_pane {{
+                background: {t["scl"]};
+                border-left: 1px solid {t["divider"]};
+            }}
+            #preview_frame {{
+                background: {t["sch"]};
+                border-radius: 12px;
+            }}
+            #preview_icon {{ color: {t["on_sv"]}; background: transparent; }}
+            #preview_text {{ color: {t["on_sv"]}; background: transparent; }}
+            #d_type {{ color: {t["primary"]}; }}
+            #info_label {{ color: {t["on_sv"]}; }}
+            #open_btn {{
+                background: {t["primary"]};
+                color: {t["on_primary"]};
+                border: none;
+                border-radius: 10px;
+            }}
+            #open_btn:pressed {{ background: {_darken(t["primary"], 35)}; padding-top: 6px; padding-bottom: 2px; }}
+            #folder_btn {{
+                background: {t["sec_c"]};
+                color: {t["on_s"]};
+                border: none;
+                border-radius: 10px;
+            }}
+            #folder_btn:pressed {{ background: {_darken(t["sec_c"], 30)}; padding-top: 6px; padding-bottom: 2px; }}
+            #primary_btn:pressed {{ background: {_darken(t["primary"], 35)}; padding-top: 6px; padding-bottom: 2px; }}
+            Sidebar QPushButton:pressed {{ background: {_darken(t["sch"], 20)}; }}
+            QPushButton[checkable="true"]:pressed {{ background: {_darken(t["white"], 20)}; }}
+            #copy_btn {{
                 background: transparent;
-                width: 5px;
-                margin: 10px 1px;
+                color: {t["primary"]};
                 border: none;
             }}
+
+            /* Index/Settings pages */
+            #card {{
+                background: {t["white"]};
+                border-radius: 12px;
+            }}
+            #stat_box {{
+                background: {t["scl"]};
+                border-radius: 8px;
+            }}
+            #stat_label {{ color: {t["on_sv"]}; background: transparent; }}
+            #stat_value {{ color: {t["primary"]}; background: transparent; }}
+            #progress_badge {{
+                background: {t["pc"]};
+                color: {t["opc"]};
+                border-radius: 10px;
+                padding: 3px 10px;
+            }}
+            QProgressBar {{
+                background: {t["pc"]};
+                border: none;
+                border-radius: 5px;
+            }}
+            QProgressBar::chunk {{
+                background: {t["primary"]};
+                border-radius: 5px;
+            }}
+            #primary_btn {{
+                background: {t["primary"]};
+                color: {t["on_primary"]};
+                border: none;
+                border-radius: 10px;
+                padding: 4px 20px;
+            }}
+            #type_chip {{
+                background: {t["white"]};
+                border: 1px solid {t["divider"]};
+                border-radius: 10px;
+            }}
+            #page_desc {{ color: {t["on_sv"]}; background: transparent; }}
+            #result_count {{ color: {t["primary"]}; background: transparent; }}
+            #search_time {{ color: {t["on_sv"]}; background: transparent; }}
+            #empty_sub {{ color: {t["on_sv"]}; }}
+
+            QRadioButton {{
+                color: {t["on_s"]};
+                spacing: 8px;
+                padding: 8px 12px;
+                background: {t["sc"]};
+                border: 1px solid {t["ov"]};
+                border-radius: 10px;
+            }}
+            QRadioButton:checked {{
+                border-color: {t["primary"]};
+                background: {t["pc"]};
+            }}
+            QRadioButton::indicator {{
+                width: 14px; height: 14px;
+                border-radius: 7px;
+                border: 2px solid {t["ov"]};
+                background: transparent;
+            }}
+            QRadioButton::indicator:checked {{
+                border-color: {t["primary"]};
+                background: {t["primary"]};
+            }}
+
+            QLabel {{ color: {t["on_s"]}; background: transparent; }}
+
+            QScrollArea {{ background: {t["bg"]}; border: none; }}
+            QScrollBar:vertical {{
+                background: transparent; width: 6px; margin: 4px 1px; border: none;
+            }}
             QScrollBar::handle:vertical {{
-                background: {sb};
-                min-height: 40px;
-                border-radius: 2px;
+                background: {t["sb"]}; min-height: 30px; border-radius: 3px;
             }}
-            QScrollBar::handle:vertical:hover {{
-                background: {sb_h};
-            }}
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
+            QScrollBar::handle:vertical:hover {{ background: {t["sb_h"]}; }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
             QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
 
             QStatusBar {{
-                background-color: {surface};
-                color: {text_m};
-                border-top: 1px solid {divider};
+                background: {t["bg"]};
+                color: {t["on_sv"]};
+                border-top: 1px solid {t["divider"]};
             }}
 
-            #settings_btn {{
-                background: {badge_p_bg};
-                border: 1px solid {s_border};
-                border-radius: 10px;
+            QComboBox {{
+                background: {t["white"]};
+                color: {t["on_s"]};
+                border: 1px solid {t["ov"]};
+                border-radius: 8px;
+                padding: 4px 10px;
             }}
-            #settings_btn:hover {{
-                border-color: {accent};
-            }}
-
-            #theme_btn {{
-                background: {badge_p_bg};
-                border: 1px solid {s_border};
-                border-radius: 10px;
-            }}
-            #theme_btn:hover {{
-                border-color: {accent};
+            QComboBox::drop-down {{ border: none; }}
+            QComboBox QAbstractItemView {{
+                background: {t["white"]};
+                color: {t["on_s"]};
+                selection-background-color: {t["pc"]};
+                border: 1px solid {t["ov"]};
             }}
 
-            #reindex_btn {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 {accent}, stop:1 {accent2});
-                color: white;
-                border: none;
-                border-radius: 10px;
-                padding: 0 20px;
-            }}
-            #reindex_btn:hover {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 {accent_h}, stop:1 {accent2});
-            }}
-
-            QPushButton[checkable="true"] {{
-                background: {badge_p_bg};
-                color: {text_m};
-                border: 1px solid transparent;
-                border-radius: 6px;
-                padding: 2px 10px;
-                font-family: Consolas;
-            }}
-            QPushButton[checkable="true"]:checked {{
-                background: {accent};
-                color: white;
-                border-color: {accent};
-            }}
-            QPushButton[checkable="true"]:hover {{
-                border-color: {accent};
-                color: {text};
-            }}
-
-            #formats_label {{
-                color: {accent2};
-                background: {badge_c_bg};
-                border: 1px solid {badge_c_bg};
-                border-radius: 6px;
-                padding: 3px 10px;
-            }}
-
-            QLabel {{ color: {text}; background: transparent; }}
-            #title_label {{ color: {text}; }}
-            #subtitle {{ color: {text_m}; }}
-            #search_prefix {{ color: {accent}; }}
-            #shortcut_label {{
-                color: {badge_c_t};
-                background: {badge_c_bg};
+            QCheckBox {{ color: {t["on_s"]}; spacing: 8px; }}
+            QCheckBox::indicator {{
+                width: 18px; height: 18px;
+                border: 2px solid {t["ov"]};
                 border-radius: 4px;
-                padding: 2px 8px;
+                background: transparent;
             }}
-            #result_count {{ color: {accent}; }}
-            #search_time {{ color: {text_m}; }}
-            #empty_icon {{ color: {accent}; }}
-            #empty_title {{ color: {text}; }}
-            #empty_sub {{ color: {text_m}; }}
-            #status_label {{ color: {text_m}; }}
-            #idx_count {{ color: {text_m}; }}
-            #db_path {{ color: {text_m}; padding-right: 12px; }}
+            QCheckBox::indicator:checked {{
+                background: {t["primary"]};
+                border-color: {t["primary"]};
+            }}
+
+            QSlider::groove:horizontal {{
+                background: {t["pc"]};
+                height: 6px;
+                border-radius: 3px;
+            }}
+            QSlider::handle:horizontal {{
+                background: {t["primary"]};
+                width: 18px; height: 18px;
+                margin: -6px 0;
+                border-radius: 9px;
+                border: 3px solid {t["white"]};
+            }}
+
+            #section_sep {{ color: {t["divider"]}; }}
+            #section_title {{ color: {t["on_sv"]}; background: transparent; }}
+
         """)
 
-        # Set object names
-        for w, n in [
-            (self.header, "header"), (self.divider, "divider"),
-            (self.settings_btn, "settings_btn"),
-            (self.theme_btn, "theme_btn"), (self.reindex_btn, "reindex_btn"),
-            (self.title_label, "title_label"), (self.subtitle_label, "subtitle"),
-            (self.formats_label, "formats_label"), (self.search_prefix, "search_prefix"),
-            (self.search_neon, "search_neon"),
-            (self.shortcut_label, "shortcut_label"),
-            (self.result_count_label, "result_count"), (self.search_time_label, "search_time"),
-            (self.empty_icon, "empty_icon"), (self.empty_title, "empty_title"),
-            (self.empty_sub, "empty_sub"), (self.status_label, "status_label"),
-            (self.idx_count_label, "idx_count"), (self.db_path_label, "db_path"),
-        ]:
-            w.setObjectName(n)
+        # Apply theme to each page directly
+        self.index_page.apply_theme(t)
+        self.settings_page.apply_theme(t)
 
-        self.theme_btn.setText("☀" if dk else "🌙")
+        # Detail pane
+        self.search_page.detail.setStyleSheet(f"""
+            background: {t['scl']};
+            border-left: 1px solid {t['divider']};
+        """)
+        pf = self.search_page.preview_frame
+        pf.setStyleSheet(f"background: {t['sch']}; border-radius: 12px;")
 
-        # Update child widget themes
-        self.search_neon.set_theme(T)
-        self._bg.set_theme(T)
+        self.search_page.list_view.viewport().update()
 
-        # Chip styling
-        for i, chip in enumerate(self._chips):
-            if i < 3:
-                cbg, ct = badge_p_bg, badge_p_t
-            elif i < 6:
-                cbg, ct = badge_c_bg, badge_c_t
-            else:
-                cbg, ct = T["badge_green_bg"].name(), T["badge_green_text"].name()
-            chip.setStyleSheet(f"background:{cbg}; color:{ct}; border-radius:5px; padding:2px 6px;")
-
-        self.list_view.viewport().update()
-
-    def _toggle_theme(self):
-        self.is_dark = not self.is_dark
-        self.T = THEMES["dark" if self.is_dark else "light"]
-        self._theme_colors = self.T
+    def _on_theme_change(self, theme_name):
+        self.is_dark = theme_name == "dark"
+        self.T = THEMES.get(theme_name, THEMES["light"])
         self._apply_theme()
         self._apply_win_effects()
+
+    def _on_settings_change(self, settings):
+        self.settings = settings
+        # Apply font size
+        font = QFont(FONT, settings.get("font_size", 13))
+        QApplication.instance().setFont(font)
+        # Apply language
+        lang = settings.get("language", "English")
+        set_language(lang)
+        self._apply_translations()
+        # Apply max_results
+        self.search_page.max_results = settings.get("max_results", 200)
+
+    def _apply_translations(self):
+        # Sidebar
+        pages = [tr("search"), tr("index_status"), tr("settings")]
+        for i, btn in enumerate(self.sidebar._buttons):
+            btn.setText(pages[i])
+        # Sidebar subtitle
+        self.sidebar.findChild(QLabel, "sidebar_sub").setText(tr("desktop_search"))
+        # Search page
+        self.search_page.search_input.setPlaceholderText(tr("search_placeholder"))
+        self.search_page.empty_title.setText(tr("ready_to_search"))
+        self.search_page.empty_sub.setText(tr("type_query"))
+        self.search_page.d_name.setText(tr("select_file"))
+        self.search_page.open_btn.setText(tr("open_file"))
+        self.search_page.folder_btn.setText(tr("show_folder"))
+        self.search_page.copy_btn.setText(tr("copy_path"))
+        # Index page
+        self.index_page.retranslate()
+        # Settings page
+        self.settings_page.retranslate()
+        # Header
+        titles = [tr("search"), tr("index_status"), tr("settings")]
+        self.page_title.setText(titles[self.stack.currentIndex()])
 
     def _apply_win_effects(self):
         try:
@@ -1256,112 +2346,29 @@ class QuickFindWindow(QMainWindow):
         except Exception:
             pass
 
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        if hasattr(self, '_bg'):
-            self._bg.setGeometry(0, 0, self.width(), self.height())
-
-    # ─── Search ───────────────────────────────────────────
-
-    def _set_filter(self, label):
-        for name, btn in self._filter_buttons.items():
-            btn.setChecked(name == label)
-        self._active_filter = self._filter_map.get(label)
-        if self.search_input.text().strip() or self._active_filter:
-            self._do_search()
-
-    def _set_sort(self, key):
-        for k, btn in self._sort_buttons.items():
-            btn.setChecked(k == key)
-        self._active_sort = key
-        if self.search_input.text().strip() or self._active_filter:
-            self._do_search()
-
-    def _do_search(self):
-        q = self.search_input.text().strip()
-        if not q and not self._active_filter:
-            self._show_empty("⚡", "READY TO SEARCH",
-                             "// type a query and press ENTER\n// searches file names + document contents\n// use ext:pdf or filter chips to filter by type")
-            return
-
-        t0 = time.perf_counter()
-        results = self.db.search(q, limit=200, ext_filter=self._active_filter, sort=self._active_sort)
-        ms = (time.perf_counter() - t0) * 1000
-
-        if results:
-            self.model.set_results(results)
-            self.empty_widget.hide()
-            self.list_view.show()
-            self.list_view.setCurrentIndex(self.model.index(0))
-        else:
-            self._show_empty("🔍", "NO RESULTS", "// try a different search term")
-
-        self.result_count_label.setText(f"[{len(results)} results]")
-        self.search_time_label.setText(f"⚡ {ms:.1f}ms")
-
-    def _show_empty(self, icon, title, sub):
-        self.model.clear()
-        self.list_view.hide()
-        self.empty_widget.show()
-        self.empty_icon.setText(icon)
-        self.empty_title.setText(title)
-        self.empty_sub.setText(sub)
-        self.result_count_label.setText("")
-        self.search_time_label.setText("")
-
     # ─── Actions ──────────────────────────────────────────
 
-    def _open_selected(self):
-        idx = self.list_view.currentIndex()
-        if idx.isValid():
-            path = self.model.get_path(idx.row())
-            if path:
-                self._open_file(path)
-
-    def _open_file(self, path):
-        try:
-            if os.path.exists(path):
-                os.startfile(path)
-            else:
-                self.status_label.setText(f"// not found: {os.path.basename(path)}")
-        except Exception as e:
-            self.status_label.setText(f"// error: {e}")
-
-    def _on_double_click(self, index):
-        path = self.model.get_path(index.row())
-        if path:
-            self._open_file(path)
-
-    def _open_in_folder(self):
-        idx = self.list_view.currentIndex()
-        if idx.isValid():
-            path = self.model.get_path(idx.row())
-            if path:
-                try:
-                    if os.path.exists(path):
-                        subprocess.Popen(["explorer", "/select,", path])
-                    elif os.path.exists(os.path.dirname(path)):
-                        os.startfile(os.path.dirname(path))
-                except Exception:
-                    pass
-
     def _clear_search(self):
-        self.search_input.clear()
-        self.search_input.setFocus()
-        self._show_empty("⚡", "READY TO SEARCH",
-                         "// type a query and press ENTER\n// searches file names + document contents")
+        self.search_page.search_input.clear()
+        self.search_page.search_input.setFocus()
+        self.search_page.model.clear()
+        self.search_page.list_view.hide()
+        self.search_page.empty.show()
+        self.search_page.empty_title.setText("Ready to Search")
+        self.search_page.empty_sub.setText("Type a query and press Enter")
 
     def _focus_search(self):
-        self.search_input.setFocus()
-        self.search_input.selectAll()
+        self._switch_page(0)
+        self.search_page.search_input.setFocus()
+        self.search_page.search_input.selectAll()
 
     # ─── Indexing ─────────────────────────────────────────
 
     def _start_indexing(self):
         n = self.db.get_file_count()
         if n > 0:
-            self.status_label.setText(f"// ready — {n:,} files indexed")
-            self.idx_count_label.setText(f"  [{n:,}]")
+            self.status_label.setText(f"Ready — {n:,} files indexed")
+            self.idx_count_label.setText(f"[{n:,}]")
             lt = self.db.get_meta("last_index_time")
             if lt:
                 try:
@@ -1370,7 +2377,7 @@ class QuickFindWindow(QMainWindow):
                 except Exception:
                     pass
         else:
-            self.status_label.setText("// first indexing starting...")
+            self.status_label.setText("First indexing starting...")
             QTimer.singleShot(500, lambda: self._run_indexer(True))
 
     def _run_indexer(self, reindex):
@@ -1382,35 +2389,31 @@ class QuickFindWindow(QMainWindow):
         self._indexer_thread.finished_indexing.connect(self._on_idx_done)
         self._indexer_thread.start()
 
-    def _open_settings(self):
-        dlg = SettingsDialog(self, self.is_dark)
-        if dlg.exec() == QDialog.Accepted:
-            new_preset = dlg.get_selected_preset()
-            from database import get_preset_name, set_preset_name
-            if new_preset != get_preset_name():
-                set_preset_name(new_preset)
-                self.status_label.setText(f"// preset changed to {new_preset} — reindexing...")
-                self._run_indexer(True)
-
     def _reindex(self):
         if self._indexer_thread and self._indexer_thread.isRunning():
             self._indexer_thread.stop()
-            self.status_label.setText("// indexing stopped")
-            self.reindex_btn.setText("⟳  REINDEX")
+            self.status_label.setText("Indexing stopped")
             return
-        self.reindex_btn.setText("■  STOP")
         self._run_indexer(True)
 
     def _on_idx_progress(self, count):
-        self.idx_count_label.setText(f"  [{count:,}]")
+        self.idx_count_label.setText(f"[{count:,}]")
+        self.status_hint.setText(f"Indexing... {count:,} files")
+        self.index_page.stat_queue.setText(f"{count:,}")
+        self.index_page.progress_badge.setText("INDEXING")
 
     def _on_idx_status(self, msg):
-        self.status_label.setText(f"// {msg}")
+        self.status_label.setText(msg)
+        self.index_page.progress_detail.setText(msg)
         if "Ready" in msg:
-            self.reindex_btn.setText("⟳  REINDEX")
+            self.status_hint.setText("")
+            self.index_page.progress_badge.setText("READY")
+            self.index_page.refresh()
 
     def _on_idx_done(self):
-        self.reindex_btn.setText("⟳  REINDEX")
+        self.index_page.progress_badge.setText("COMPLETE")
+        self.index_page.progress_bar.setValue(100)
+        self.index_page.refresh()
         self._start_watcher()
 
     # ─── File Watcher ─────────────────────────────────────
@@ -1421,7 +2424,7 @@ class QuickFindWindow(QMainWindow):
         from database import FileWatcher
         self._file_watcher = FileWatcher(
             self.db,
-            status_callback=lambda msg: QTimer.singleShot(0, lambda: self.status_label.setText(f"// {msg}"))
+            status_callback=lambda msg: QTimer.singleShot(0, lambda: self.status_label.setText(msg))
         )
         self._file_watcher.start()
 
@@ -1454,7 +2457,6 @@ def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
-    # Set app icon for taskbar
     ico = os.path.join(SCRIPT_DIR, "quickfind.ico")
     if os.path.exists(ico):
         app.setWindowIcon(QIcon(ico))
