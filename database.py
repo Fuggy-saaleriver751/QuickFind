@@ -1,23 +1,29 @@
 """
 QuickFind — Database, Indexer & File Watcher
-SQLite FTS5 · Content indexing · Real-time file watching
-Supports: PDF, DOCX, XLSX, PPTX, RTF, EPUB + 35 plain-text formats
+SQLite FTS5 · 3-Phase Indexing · Parallel Scanning · Real-time Watching
+
+Phase 1: Fast metadata scan (name, size, date) — search ready in seconds
+Phase 2: Content indexing (text/rich documents) — FTS enrichment in background
+Phase 3: Hash computation (SHA-256) — duplicate detection in background
 
 Optimizations:
 - Directory deduplication (dirs table) — paths stored once, referenced by id
-- FTS indexes name + extension + folder_name + content only (no full path)
-- No directory entries in files table (files only)
-- WAL auto-checkpoint + TRUNCATE after batch
-- VACUUM on indexing complete
+- FTS indexes name + extension + folder_name + content only
+- ThreadPoolExecutor for parallel directory scanning
+- Parallel drive detection (A:-Z:, dynamic)
+- WAL mode + batch inserts
 """
 
 import sqlite3
 import os
+import re
 import time
 import threading
 import json
+import hashlib
 from pathlib import Path
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
@@ -49,7 +55,6 @@ PRESETS = {
     "standard": {"text_bytes": 512,   "rich_chars": 512,   "label": "Standard (~80-150 MB) *"},
     "deep":     {"text_bytes": 4096,  "rich_chars": 4096,  "label": "Deep (~200-500 MB) *"},
     "maximum":  {"text_bytes": 0,     "rich_chars": 0,     "label": "Maximum (~500 MB+) *"},
-    # * estimates — actual size varies depending on file count
 }
 
 import sys as _sys
@@ -102,7 +107,7 @@ def _reset_limits_cache():
 #  RICH DOCUMENT READERS
 # ══════════════════════════════════════════════════════════════
 
-_READ_LIMIT = 8192  # Internal read limit for readers — final trim in read_content
+_READ_LIMIT = 8192
 
 def _read_pdf(path):
     try:
@@ -204,17 +209,29 @@ RICH_READERS = {
 #  DATABASE — with directory deduplication
 # ══════════════════════════════════════════════════════════════
 
+def _regexp(pattern, value):
+    """SQLite REGEXP function for regex search."""
+    if value is None:
+        return False
+    try:
+        return bool(re.search(pattern, value, re.IGNORECASE))
+    except re.error:
+        return False
+
+
 class FileDatabase:
     def __init__(self):
         os.makedirs(DB_DIR, exist_ok=True)
         self.conn = sqlite3.connect(DB_PATH, check_same_thread=False)
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA synchronous=NORMAL")
-        self.conn.execute("PRAGMA cache_size=-32000")
-        self.conn.execute("PRAGMA wal_autocheckpoint=100")
+        self.conn.execute("PRAGMA cache_size=-64000")
+        self.conn.execute("PRAGMA wal_autocheckpoint=200")
         self.conn.execute("PRAGMA page_size=4096")
+        self.conn.execute("PRAGMA mmap_size=268435456")  # 256MB mmap for faster reads
+        self.conn.create_function("REGEXP", 2, _regexp)
         self.lock = threading.Lock()
-        self._dir_cache = {}  # path -> dir_id (in-memory cache)
+        self._dir_cache = {}
         self._create_tables()
 
     def _create_tables(self):
@@ -271,11 +288,21 @@ class FileDatabase:
 
                 CREATE INDEX IF NOT EXISTS idx_files_ext ON files(extension);
                 CREATE INDEX IF NOT EXISTS idx_files_dir ON files(dir_id);
+                CREATE INDEX IF NOT EXISTS idx_files_modified ON files(modified);
+                CREATE INDEX IF NOT EXISTS idx_files_size ON files(size);
             """)
             self.conn.commit()
 
+            # Migration: add content_hash column if missing
+            try:
+                self.conn.execute("SELECT content_hash FROM files LIMIT 0")
+            except sqlite3.OperationalError:
+                self.conn.execute("ALTER TABLE files ADD COLUMN content_hash TEXT DEFAULT ''")
+                self.conn.commit()
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_files_hash ON files(content_hash)")
+            self.conn.commit()
+
     def _get_dir_id(self, dir_path):
-        """Get or create directory entry, cached in memory."""
         if dir_path in self._dir_cache:
             return self._dir_cache[dir_path]
         cur = self.conn.execute("SELECT id FROM dirs WHERE path=?", (dir_path,))
@@ -283,7 +310,7 @@ class FileDatabase:
         if row:
             self._dir_cache[dir_path] = row[0]
             return row[0]
-        cur = self.conn.execute("INSERT OR IGNORE INTO dirs(path) VALUES(?)", (dir_path,))
+        self.conn.execute("INSERT OR IGNORE INTO dirs(path) VALUES(?)", (dir_path,))
         self.conn.commit()
         cur = self.conn.execute("SELECT id FROM dirs WHERE path=?", (dir_path,))
         row = cur.fetchone()
@@ -315,31 +342,119 @@ class FileDatabase:
             self._dir_cache.clear()
 
     def insert_batch(self, file_list):
-        """file_list: [(name, dir_path, ext, size, modified, folder_name, content_text), ...]"""
+        """file_list: [(name, dir_path, ext, size, modified, folder_name, content_text, content_hash), ...]
+        content_text and content_hash are optional (can be 7 or 8 element tuples)."""
         with self.lock:
             rows = []
-            for name, dir_path, ext, size, modified, folder_name, content_text in file_list:
+            for item in file_list:
+                name, dir_path, ext, size, modified, folder_name = item[:6]
+                content_text = item[6] if len(item) > 6 else ""
+                content_hash = item[7] if len(item) > 7 else ""
                 dir_id = self._get_dir_id(dir_path)
-                rows.append((name, dir_id, ext, size, modified, folder_name, content_text))
+                rows.append((name, dir_id, ext, size, modified, folder_name, content_text, content_hash))
             self.conn.executemany(
-                "INSERT OR IGNORE INTO files(name, dir_id, extension, size, modified, folder_name, content_text) "
-                "VALUES(?, ?, ?, ?, ?, ?, ?)",
+                "INSERT OR IGNORE INTO files(name, dir_id, extension, size, modified, folder_name, content_text, content_hash) "
+                "VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
                 rows
             )
             self.conn.commit()
-            self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            self.conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
 
-    def upsert_file(self, name, dir_path, ext, size, modified, folder_name="", content_text=""):
+    def upsert_batch(self, file_list):
         with self.lock:
-            dir_id = self._get_dir_id(dir_path)
-            self.conn.execute(
-                "INSERT INTO files(name, dir_id, extension, size, modified, folder_name, content_text) "
-                "VALUES(?, ?, ?, ?, ?, ?, ?) "
+            rows = []
+            for item in file_list:
+                name, dir_path, ext, size, modified, folder_name = item[:6]
+                content_text = item[6] if len(item) > 6 else ""
+                content_hash = item[7] if len(item) > 7 else ""
+                dir_id = self._get_dir_id(dir_path)
+                rows.append((name, dir_id, ext, size, modified, folder_name, content_text, content_hash))
+            self.conn.executemany(
+                "INSERT INTO files(name, dir_id, extension, size, modified, folder_name, content_text, content_hash) "
+                "VALUES(?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(dir_id, name) DO UPDATE SET "
                 "extension=excluded.extension, size=excluded.size, "
                 "modified=excluded.modified, folder_name=excluded.folder_name, "
-                "content_text=excluded.content_text",
-                (name, dir_id, ext, size, modified, folder_name, content_text)
+                "content_text=CASE WHEN excluded.content_text != '' THEN excluded.content_text ELSE files.content_text END, "
+                "content_hash=CASE WHEN excluded.content_hash != '' THEN excluded.content_hash ELSE files.content_hash END",
+                rows
+            )
+            self.conn.commit()
+            self.conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+
+    def update_content_batch(self, updates):
+        """Update content_text for existing files. updates: [(content_text, dir_path, name), ...]"""
+        with self.lock:
+            rows = []
+            for content_text, dir_path, name in updates:
+                dir_id = self._dir_cache.get(dir_path)
+                if dir_id is None:
+                    cur = self.conn.execute("SELECT id FROM dirs WHERE path=?", (dir_path,))
+                    row = cur.fetchone()
+                    if not row:
+                        continue
+                    dir_id = row[0]
+                    self._dir_cache[dir_path] = dir_id
+                rows.append((content_text, dir_id, name))
+            if rows:
+                self.conn.executemany(
+                    "UPDATE files SET content_text=? WHERE dir_id=? AND name=?", rows)
+                self.conn.commit()
+
+    def update_hash_batch(self, updates):
+        """Update content_hash for existing files. updates: [(content_hash, dir_path, name), ...]"""
+        with self.lock:
+            rows = []
+            for content_hash, dir_path, name in updates:
+                dir_id = self._dir_cache.get(dir_path)
+                if dir_id is None:
+                    cur = self.conn.execute("SELECT id FROM dirs WHERE path=?", (dir_path,))
+                    row = cur.fetchone()
+                    if not row:
+                        continue
+                    dir_id = row[0]
+                    self._dir_cache[dir_path] = dir_id
+                rows.append((content_hash, dir_id, name))
+            if rows:
+                self.conn.executemany(
+                    "UPDATE files SET content_hash=? WHERE dir_id=? AND name=?", rows)
+                self.conn.commit()
+
+    def get_files_needing_content(self, limit=500):
+        """Get files that need content indexing (Phase 2).
+        Only returns files with content_text exactly '' (not ' ' which means attempted)."""
+        placeholders = ",".join("?" * len(ALL_CONTENT_EXTENSIONS))
+        cur = self.conn.execute(f"""
+            SELECT f.name, d.path, f.extension, f.size
+            FROM files f JOIN dirs d ON d.id = f.dir_id
+            WHERE f.content_text = '' AND f.extension IN ({placeholders})
+            AND f.size > 0 AND f.size < ?
+            ORDER BY f.size ASC
+            LIMIT ?
+        """, list(ALL_CONTENT_EXTENSIONS) + [MAX_RICH_FILE_SIZE, limit])
+        return cur.fetchall()
+
+    def get_files_needing_hash(self, limit=500):
+        """Get files that need hash computation (Phase 3)."""
+        cur = self.conn.execute("""
+            SELECT f.name, d.path, f.size
+            FROM files f JOIN dirs d ON d.id = f.dir_id
+            WHERE f.content_hash = '' AND f.size > 0
+            LIMIT ?
+        """, (limit,))
+        return cur.fetchall()
+
+    def upsert_file(self, name, dir_path, ext, size, modified, folder_name="", content_text="", content_hash=""):
+        with self.lock:
+            dir_id = self._get_dir_id(dir_path)
+            self.conn.execute(
+                "INSERT INTO files(name, dir_id, extension, size, modified, folder_name, content_text, content_hash) "
+                "VALUES(?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(dir_id, name) DO UPDATE SET "
+                "extension=excluded.extension, size=excluded.size, "
+                "modified=excluded.modified, folder_name=excluded.folder_name, "
+                "content_text=excluded.content_text, content_hash=excluded.content_hash",
+                (name, dir_id, ext, size, modified, folder_name, content_text, content_hash)
             )
             self.conn.commit()
 
@@ -358,7 +473,6 @@ class FileDatabase:
             self.conn.commit()
 
     def delete_by_dir_prefix(self, dir_prefix):
-        """Delete all files under a directory prefix."""
         with self.lock:
             self.conn.execute("""
                 DELETE FROM files WHERE dir_id IN (
@@ -366,6 +480,8 @@ class FileDatabase:
                 )
             """, (dir_prefix, dir_prefix + "\\%"))
             self.conn.commit()
+
+    # ─── Search ──────────────────────────────────────────
 
     SORT_OPTIONS = {
         "relevance": "rank",
@@ -377,40 +493,75 @@ class FileDatabase:
         "date_old":  "f.modified ASC",
     }
 
-    def search(self, query, limit=200, ext_filter=None, sort="relevance"):
-        """Search files. ext_filter: list of extensions. sort: relevance|name_asc|name_desc|size_asc|size_desc|date_new|date_old"""
+    def search(self, query, limit=200, ext_filter=None, sort="relevance",
+               min_size=None, max_size=None, date_from=None, date_to=None,
+               folder_filter=None, regex_pattern=None, content_filter=None):
+        """Advanced search with multiple filter types."""
         query = query.strip() if query else ""
 
-        # Parse search syntax: ext:pdf, ext:docx,xlsx, folder:name
+        # Parse inline operators (ext:, hash:) for backward compat
         parsed_exts = []
         search_terms = []
-        for term in query.split():
-            if term.lower().startswith("ext:"):
+        hash_query = None
+        for term in (query.split() if query else []):
+            low = term.lower()
+            if low.startswith("ext:"):
                 for e in term[4:].split(","):
                     e = e.strip().lower()
                     if not e.startswith("."):
                         e = "." + e
                     parsed_exts.append(e)
+            elif low.startswith("hash:"):
+                hash_query = term[5:].strip()
             else:
                 search_terms.append(term)
 
-        # Combine parsed exts with filter param
+        if hash_query:
+            return self._search_by_hash(hash_query, limit)
+
+        # Regex search mode
+        if regex_pattern:
+            return self._search_regex(regex_pattern, limit, ext_filter or parsed_exts,
+                                       min_size, max_size, date_from, date_to, folder_filter)
+
+        # Combine extensions
         all_exts = parsed_exts
         if ext_filter:
             all_exts = ext_filter if not parsed_exts else parsed_exts
 
-        if not search_terms and not all_exts:
-            return []
-        if not query and not ext_filter:
+        if not search_terms and not all_exts and not content_filter and \
+           min_size is None and max_size is None and date_from is None and folder_filter is None:
             return []
 
-        # Build extension WHERE clause
-        ext_clause = ""
-        ext_params = []
+        # Build extra WHERE clauses
+        extra_clauses = []
+        extra_params = []
         if all_exts:
             placeholders = ",".join("?" * len(all_exts))
-            ext_clause = f"AND f.extension IN ({placeholders})"
-            ext_params = list(all_exts)
+            extra_clauses.append(f"f.extension IN ({placeholders})")
+            extra_params.extend(all_exts)
+        if min_size is not None:
+            extra_clauses.append("f.size >= ?")
+            extra_params.append(min_size)
+        if max_size is not None:
+            extra_clauses.append("f.size <= ?")
+            extra_params.append(max_size)
+        if date_from is not None:
+            extra_clauses.append("f.modified >= ?")
+            extra_params.append(date_from)
+        if date_to is not None:
+            extra_clauses.append("f.modified <= ?")
+            extra_params.append(date_to)
+        if folder_filter:
+            extra_clauses.append("f.folder_name LIKE ?")
+            extra_params.append(f"%{folder_filter}%")
+        if content_filter:
+            extra_clauses.append("f.content_text LIKE ?")
+            extra_params.append(f"%{content_filter}%")
+
+        extra_where = ""
+        if extra_clauses:
+            extra_where = "AND " + " AND ".join(extra_clauses)
 
         order = self.SORT_OPTIONS.get(sort, "rank")
 
@@ -423,10 +574,10 @@ class FileDatabase:
                     FROM files_fts
                     JOIN files f ON f.id = files_fts.rowid
                     JOIN dirs d ON d.id = f.dir_id
-                    WHERE files_fts MATCH ? {ext_clause}
+                    WHERE files_fts MATCH ? {extra_where}
                     ORDER BY {order}
                     LIMIT ?
-                """, [fts_query] + ext_params + [limit])
+                """, [fts_query] + extra_params + [limit])
                 return cur.fetchall()
             except Exception:
                 like = f"%{search_terms[0]}%"
@@ -435,22 +586,120 @@ class FileDatabase:
                     SELECT f.name, d.path || '\\' || f.name, f.extension, f.size, f.modified, 0, 0
                     FROM files f
                     JOIN dirs d ON d.id = f.dir_id
-                    WHERE f.name LIKE ? {ext_clause}
+                    WHERE f.name LIKE ? {extra_where}
                     ORDER BY {fallback_order}
                     LIMIT ?
-                """, [like] + ext_params + [limit])
+                """, [like] + extra_params + [limit])
                 return cur.fetchall()
         else:
             no_fts_order = order if order != "rank" else "f.modified DESC"
+            where = "WHERE 1=1 " + extra_where if extra_where else "WHERE 1=1"
             cur = self.conn.execute(f"""
                 SELECT f.name, d.path || '\\' || f.name, f.extension, f.size, f.modified, 0, 0
                 FROM files f
                 JOIN dirs d ON d.id = f.dir_id
-                WHERE 1=1 {ext_clause}
+                {where}
                 ORDER BY {no_fts_order}
                 LIMIT ?
-            """, ext_params + [limit])
+            """, extra_params + [limit])
             return cur.fetchall()
+
+    def _search_regex(self, pattern, limit, ext_filter, min_size, max_size, date_from, date_to, folder_filter):
+        """Search using REGEXP on file names."""
+        clauses = ["f.name REGEXP ?"]
+        params = [pattern]
+        if ext_filter:
+            placeholders = ",".join("?" * len(ext_filter))
+            clauses.append(f"f.extension IN ({placeholders})")
+            params.extend(ext_filter)
+        if min_size is not None:
+            clauses.append("f.size >= ?")
+            params.append(min_size)
+        if max_size is not None:
+            clauses.append("f.size <= ?")
+            params.append(max_size)
+        if date_from is not None:
+            clauses.append("f.modified >= ?")
+            params.append(date_from)
+        if date_to is not None:
+            clauses.append("f.modified <= ?")
+            params.append(date_to)
+        if folder_filter:
+            clauses.append("f.folder_name LIKE ?")
+            params.append(f"%{folder_filter}%")
+        where = " AND ".join(clauses)
+        cur = self.conn.execute(f"""
+            SELECT f.name, d.path || '\\' || f.name, f.extension, f.size, f.modified, 0, 0
+            FROM files f
+            JOIN dirs d ON d.id = f.dir_id
+            WHERE {where}
+            ORDER BY f.name ASC
+            LIMIT ?
+        """, params + [limit])
+        return cur.fetchall()
+
+    def get_file_hash(self, full_path):
+        dir_path = os.path.dirname(full_path)
+        name = os.path.basename(full_path)
+        cur = self.conn.execute("""
+            SELECT f.content_hash FROM files f
+            JOIN dirs d ON d.id = f.dir_id
+            WHERE d.path = ? AND f.name = ?
+        """, (dir_path, name))
+        row = cur.fetchone()
+        return row[0] if row else ""
+
+    def _search_by_hash(self, hash_prefix, limit=200):
+        cur = self.conn.execute("""
+            SELECT f.name, d.path || '\\' || f.name, f.extension, f.size, f.modified, 0, 0
+            FROM files f
+            JOIN dirs d ON d.id = f.dir_id
+            WHERE f.content_hash LIKE ?
+            ORDER BY f.name ASC
+            LIMIT ?
+        """, (hash_prefix + "%", limit))
+        return cur.fetchall()
+
+    def find_duplicates(self, limit=500, min_size=1):
+        cur = self.conn.execute("""
+            SELECT f.content_hash, f.name, d.path || '\\' || f.name, f.extension, f.size, f.modified,
+                   COUNT(*) OVER (PARTITION BY f.content_hash) as dup_count
+            FROM files f
+            JOIN dirs d ON d.id = f.dir_id
+            WHERE f.content_hash != '' AND f.size >= ?
+            AND f.content_hash IN (
+                SELECT content_hash FROM files
+                WHERE content_hash != '' AND size >= ?
+                GROUP BY content_hash HAVING COUNT(*) > 1
+            )
+            ORDER BY f.size DESC, f.content_hash, f.name
+            LIMIT ?
+        """, (min_size, min_size, limit))
+        return cur.fetchall()
+
+    def find_similar(self, name, limit=20):
+        """Find files with similar names using FTS."""
+        # Split name into words
+        base = Path(name).stem
+        words = re.split(r'[_\-.\s]+', base)
+        words = [w for w in words if len(w) > 2]
+        if not words:
+            return []
+        fts_query = " OR ".join(f'"{w}"*' for w in words[:5])
+        try:
+            cur = self.conn.execute("""
+                SELECT f.name, d.path || '\\' || f.name, f.extension, f.size, f.modified, 0,
+                       bm25(files_fts) as rank
+                FROM files_fts
+                JOIN files f ON f.id = files_fts.rowid
+                JOIN dirs d ON d.id = f.dir_id
+                WHERE files_fts MATCH ? AND f.name != ?
+                ORDER BY rank
+                LIMIT ?
+            """, (fts_query, name, limit))
+            return cur.fetchall()
+        except Exception:
+            return []
 
     def close(self):
         self.conn.close()
@@ -465,8 +714,18 @@ class FileDatabase:
 
 
 # ══════════════════════════════════════════════════════════════
-#  FILE INDEXER
+#  FILE INDEXER — 3-Phase, Parallel
 # ══════════════════════════════════════════════════════════════
+
+def _detect_drives():
+    """Dynamically detect all available drives (A:-Z:)."""
+    drives = []
+    for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+        drive = f"{letter}:\\"
+        if os.path.exists(drive):
+            drives.append(drive)
+    return drives
+
 
 class FileIndexer:
     SKIP_DIRS = {
@@ -482,19 +741,30 @@ class FileIndexer:
         '.dat', '.db-journal', '.db-shm', '.db-wal',
     }
 
-    def __init__(self, db: FileDatabase, progress_callback=None, status_callback=None):
+    def __init__(self, db: FileDatabase, progress_callback=None, status_callback=None,
+                 phase_callback=None):
+        """
+        phase_callback(phase: int, status: str) — called when phase changes:
+            1 = metadata scan started/done
+            2 = content indexing started/done
+            3 = hash computation started/done
+        """
         self.db = db
         self.progress_callback = progress_callback
         self.status_callback = status_callback
+        self.phase_callback = phase_callback
         self._stop_event = threading.Event()
         self._thread = None
         self.total_indexed = 0
+        self._incremental_since = 0
+        self._is_reindex = True
+        self.current_phase = 0
 
     def start(self, drives=None, reindex=False):
         if self._thread and self._thread.is_alive():
             return
         if drives is None:
-            drives = self._get_drives()
+            drives = _detect_drives()
         self._stop_event.clear()
         self._thread = threading.Thread(target=self._index_worker, args=(drives, reindex), daemon=True)
         self._thread.start()
@@ -507,14 +777,6 @@ class FileIndexer:
     def is_running(self):
         return self._thread is not None and self._thread.is_alive()
 
-    def _get_drives(self):
-        drives = []
-        for letter in "CDEFGHIJKLMNOPQRSTUVWXYZ":
-            drive = f"{letter}:\\"
-            if os.path.exists(drive):
-                drives.append(drive)
-        return drives
-
     def _status(self, msg):
         if self.status_callback:
             self.status_callback(msg)
@@ -523,10 +785,27 @@ class FileIndexer:
         if self.progress_callback:
             self.progress_callback(count)
 
+    def _phase(self, phase, status):
+        self.current_phase = phase
+        if self.phase_callback:
+            self.phase_callback(phase, status)
+
+    @staticmethod
+    def compute_file_hash(path, size=0, max_bytes=8192):
+        try:
+            h = hashlib.sha256()
+            h.update(str(size).encode())
+            with open(path, 'rb') as f:
+                data = f.read(max_bytes)
+                if data:
+                    h.update(data)
+            return h.hexdigest()[:32]
+        except (PermissionError, OSError):
+            return ""
+
     @staticmethod
     def read_content(path, ext, size=0):
         text_bytes, rich_chars = _get_limits()
-        # 0 = unlimited
         if text_bytes == 0: text_bytes = 1_000_000
         if rich_chars == 0: rich_chars = 1_000_000
         if ext in RICH_EXTENSIONS:
@@ -546,6 +825,8 @@ class FileIndexer:
                 return ""
         return ""
 
+    # ─── Main Worker ─────────────────────────────────────
+
     def _index_worker(self, drives, reindex):
         start_time = time.time()
         _reset_limits_cache()
@@ -553,56 +834,156 @@ class FileIndexer:
         if reindex:
             self._status("Clearing old index...")
             self.db.clear()
+            self._incremental_since = 0
+        else:
+            lt = self.db.get_meta("last_index_time")
+            if lt:
+                try:
+                    self._incremental_since = datetime.fromisoformat(lt).timestamp() - 60
+                except Exception:
+                    self._incremental_since = 0
+            else:
+                self._incremental_since = 0
 
+        self._is_reindex = reindex
         self.total_indexed = 0
-        batch = []
-        batch_size = 1000
 
-        for drive in drives:
-            if self._stop_event.is_set():
-                break
-            self._status(f"Scanning: {drive}")
-            self._scan_directory(drive, batch, batch_size)
+        # ═══ PHASE 1: Fast metadata scan (parallel per drive) ═══
+        self._phase(1, "starting")
+        self._status("Phase 1: Scanning file metadata...")
+        self._phase1_scan(drives)
+        p1_time = time.time() - start_time
 
-        if batch:
-            self.db.insert_batch(batch)
-            batch.clear()
+        if self._stop_event.is_set():
+            return
 
+        count = self.db.get_file_count()
+        self._status(f"Phase 1 done: {count:,} files in {p1_time:.1f}s — search ready!")
+        self._progress(count)
+        self._phase(1, "done")
+        self.db.set_meta("last_index_time", datetime.now().isoformat())
+
+        # ═══ PHASE 2: Content indexing (background, parallel) ═══
+        if self._stop_event.is_set():
+            return
+        self._phase(2, "starting")
+        self._status("Phase 2: Indexing file content...")
+        p2_count = self._phase2_content()
+        p2_time = time.time() - start_time - p1_time
+
+        if self._stop_event.is_set():
+            return
+
+        self._status(f"Phase 2 done: {p2_count:,} files enriched in {p2_time:.1f}s")
+        self._phase(2, "done")
+
+        # ═══ PHASE 3: Hash computation (background, parallel) ═══
+        if self._stop_event.is_set():
+            return
+        self._phase(3, "starting")
+        self._status("Phase 3: Computing file hashes...")
+        p3_count = self._phase3_hash()
+        p3_time = time.time() - start_time - p1_time - p2_time
+
+        if self._stop_event.is_set():
+            return
+
+        self._phase(3, "done")
+
+        # ═══ Finalize ═══
         elapsed = time.time() - start_time
         self.db.set_meta("last_index_time", datetime.now().isoformat())
-        self.db.set_meta("total_files", str(self.total_indexed))
         self.db.set_meta("index_duration", f"{elapsed:.1f}")
+        self.db.set_meta("total_files", str(count))
 
-        self._status("Compacting database...")
-        try:
-            with self.db.lock:
-                # Force WAL flush: switch to DELETE mode (removes WAL), then back to WAL
-                self.db.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-                self.db.conn.execute("PRAGMA journal_mode=DELETE")
-                self.db.conn.execute("VACUUM")
-                self.db.conn.execute("PRAGMA journal_mode=WAL")
-                self.db.conn.execute("PRAGMA wal_autocheckpoint=100")
-        except Exception:
-            pass
+        if reindex:
+            try:
+                with self.db.lock:
+                    self.db.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                    self.db.conn.execute("PRAGMA journal_mode=DELETE")
+                    self.db.conn.execute("VACUUM")
+                    self.db.conn.execute("PRAGMA journal_mode=WAL")
+                    self.db.conn.execute("PRAGMA wal_autocheckpoint=200")
+            except Exception:
+                pass
+        else:
+            try:
+                with self.db.lock:
+                    self.db.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            except Exception:
+                pass
 
         count = self.db.get_file_count()
         db_size = self.db.get_db_size_mb()
-        self._status(f"Ready! {count:,} files ({db_size:.0f} MB) — {elapsed:.1f}s")
+        self._status(f"Ready! {count:,} files ({db_size:.0f} MB) — {elapsed:.1f}s total")
         self._progress(count)
 
-    def _scan_directory(self, root, batch, batch_size):
+    # ─── Phase 1: Metadata Scan ──────────────────────────
+
+    def _phase1_scan(self, drives):
+        """Scan all drives in parallel — metadata only, no content/hash reading."""
+        batch = []
+        batch_size = 2000
+
+        # Use ThreadPoolExecutor to scan drives in parallel
+        with ThreadPoolExecutor(max_workers=min(len(drives), 4)) as executor:
+            futures = {}
+            for drive in drives:
+                if self._stop_event.is_set():
+                    break
+                future = executor.submit(self._scan_drive_metadata, drive)
+                futures[future] = drive
+
+            for future in as_completed(futures):
+                if self._stop_event.is_set():
+                    break
+                drive = futures[future]
+                try:
+                    results = future.result()
+                    if results:
+                        batch.extend(results)
+                        # Flush in chunks
+                        while len(batch) >= batch_size:
+                            chunk = batch[:batch_size]
+                            batch = batch[batch_size:]
+                            if self._is_reindex:
+                                self.db.insert_batch(chunk)
+                            else:
+                                self.db.upsert_batch(chunk)
+                            self.total_indexed += len(chunk)
+                            self._progress(self.total_indexed)
+                            self._status(f"Phase 1: {self.total_indexed:,} files scanned...")
+                except Exception:
+                    pass
+
+        # Flush remaining
+        if batch:
+            if self._is_reindex:
+                self.db.insert_batch(batch)
+            else:
+                self.db.upsert_batch(batch)
+            self.total_indexed += len(batch)
+            self._progress(self.total_indexed)
+
+    def _scan_drive_metadata(self, drive):
+        """Scan a single drive — returns list of metadata tuples. Runs in thread."""
+        results = []
+        self._scan_dir_recursive(drive, results)
+        return results
+
+    def _scan_dir_recursive(self, root, results):
+        """Recursively scan directory, collecting metadata only."""
         try:
             for entry in os.scandir(root):
                 if self._stop_event.is_set():
                     return
                 try:
                     name = entry.name
-
                     if entry.is_dir(follow_symlinks=False):
                         if name in self.SKIP_DIRS or name.startswith('.'):
                             continue
                         try:
-                            self._scan_directory(entry.path, batch, batch_size)
+                            self._scan_dir_recursive(entry.path, results)
                         except (PermissionError, OSError):
                             pass
                     else:
@@ -617,31 +998,97 @@ class FileIndexer:
                             size = 0
                             modified = 0
 
+                        # Incremental: skip unchanged files
+                        if not self._is_reindex and self._incremental_since > 0 and modified <= self._incremental_since:
+                            continue
+
                         folder_name = os.path.basename(root)
                         dir_path = root.rstrip("\\")
 
-                        content = ""
-                        if ext in RICH_EXTENSIONS:
-                            if size < MAX_RICH_FILE_SIZE:
-                                content = self.read_content(entry.path, ext, size)
-                        elif ext in TEXT_EXTENSIONS and size < 500_000:
-                            content = self.read_content(entry.path, ext, size)
-
-                        # (name, dir_path, ext, size, modified, folder_name, content_text)
-                        batch.append((name, dir_path, ext, size, modified, folder_name, content))
-                        self.total_indexed += 1
-
-                    if len(batch) >= batch_size:
-                        self.db.insert_batch(batch)
-                        batch.clear()
-                        self._progress(self.total_indexed)
-                        if self.total_indexed % 25000 == 0:
-                            self._status(f"Scanning... {self.total_indexed:,} files")
+                        # Phase 1: metadata only — no content, no hash
+                        results.append((name, dir_path, ext, size, modified, folder_name))
 
                 except (PermissionError, OSError):
                     continue
         except (PermissionError, OSError):
             pass
+
+    # ─── Phase 2: Content Indexing ───────────────────────
+
+    def _phase2_content(self):
+        """Read content for text/rich files using thread pool."""
+        total_enriched = 0
+
+        while not self._stop_event.is_set():
+            files = self.db.get_files_needing_content(limit=500)
+            if not files:
+                break
+
+            updates = []
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                futures = {}
+                for name, dir_path, ext, size in files:
+                    if self._stop_event.is_set():
+                        break
+                    path = os.path.join(dir_path, name)
+                    future = executor.submit(self.read_content, path, ext, size)
+                    futures[future] = (dir_path, name)
+
+                for future in as_completed(futures):
+                    if self._stop_event.is_set():
+                        break
+                    dir_path, name = futures[future]
+                    try:
+                        content = future.result(timeout=10)  # 10s timeout per file
+                        # ALWAYS mark as attempted — " " for empty/failed so it won't retry
+                        updates.append((content if content else " ", dir_path, name))
+                    except Exception:
+                        updates.append((" ", dir_path, name))
+
+            if updates:
+                self.db.update_content_batch(updates)
+                total_enriched += len(updates)
+                self._status(f"Phase 2: {total_enriched:,} files enriched...")
+
+        return total_enriched
+
+    # ─── Phase 3: Hash Computation ───────────────────────
+
+    def _phase3_hash(self):
+        """Compute hashes for all files using thread pool."""
+        total_hashed = 0
+
+        while not self._stop_event.is_set():
+            files = self.db.get_files_needing_hash(limit=2000)
+            if not files:
+                break
+
+            updates = []
+            with ThreadPoolExecutor(max_workers=6) as executor:
+                futures = {}
+                for name, dir_path, size in files:
+                    if self._stop_event.is_set():
+                        break
+                    path = os.path.join(dir_path, name)
+                    future = executor.submit(self.compute_file_hash, path, size)
+                    futures[future] = (dir_path, name)
+
+                for future in as_completed(futures):
+                    if self._stop_event.is_set():
+                        break
+                    dir_path, name = futures[future]
+                    try:
+                        file_hash = future.result(timeout=5)  # 5s timeout
+                        updates.append((file_hash if file_hash else "-", dir_path, name))
+                    except Exception:
+                        updates.append(("-", dir_path, name))
+
+            if updates:
+                self.db.update_hash_batch(updates)
+                total_hashed += len(updates)
+                self._status(f"Phase 3: {total_hashed:,} files hashed...")
+
+        return total_hashed
 
 
 # ══════════════════════════════════════════════════════════════
@@ -684,7 +1131,8 @@ class QuickFindEventHandler(FileSystemEventHandler):
             dir_path = os.path.dirname(path)
             folder_name = os.path.basename(dir_path)
             content = FileIndexer.read_content(path, ext, size)
-            self.db.upsert_file(name, dir_path, ext, size, modified, folder_name, content)
+            file_hash = FileIndexer.compute_file_hash(path, size) if size > 0 else ""
+            self.db.upsert_file(name, dir_path, ext, size, modified, folder_name, content, file_hash)
         except Exception:
             pass
 
@@ -724,26 +1172,55 @@ class FileWatcher:
         self.handler = QuickFindEventHandler(db, status_callback)
         self.observer = Observer()
         self._running = False
+        self._heartbeat_timer = None
 
     def start(self):
         if self._running:
             return
-        for letter in "CDEFGHIJKLMNOPQRSTUVWXYZ":
-            drive = f"{letter}:\\"
-            if os.path.exists(drive):
-                try:
-                    self.observer.schedule(self.handler, drive, recursive=True)
-                except Exception:
-                    pass
+        for drive in _detect_drives():
+            try:
+                self.observer.schedule(self.handler, drive, recursive=True)
+            except Exception:
+                pass
         self.observer.daemon = True
         self.observer.start()
         self._running = True
+        self._update_heartbeat()
+        self._heartbeat_timer = threading.Timer(30, self._heartbeat_loop)
+        self._heartbeat_timer.daemon = True
+        self._heartbeat_timer.start()
+
+    def _update_heartbeat(self):
+        try:
+            self.db.set_meta("watcher_heartbeat", datetime.now().isoformat())
+        except Exception:
+            pass
+
+    def _heartbeat_loop(self):
+        while self._running:
+            self._update_heartbeat()
+            time.sleep(30)
 
     def stop(self):
         if self._running:
+            self._running = False
             self.observer.stop()
             self.observer.join(timeout=5)
-            self._running = False
+            try:
+                self.db.set_meta("watcher_heartbeat", "")
+            except Exception:
+                pass
 
     def is_running(self):
         return self._running
+
+    @staticmethod
+    def is_watcher_active(db):
+        hb = db.get_meta("watcher_heartbeat")
+        if not hb:
+            return False
+        try:
+            dt = datetime.fromisoformat(hb)
+            return (datetime.now() - dt).total_seconds() < 120
+        except Exception:
+            return False

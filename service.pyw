@@ -111,6 +111,11 @@ class QuickFindService:
         self.status_timer.timeout.connect(self._update_status_text)
         self.status_timer.start(30000)
 
+        # Watcher sağlık kontrolü (her 60 sn)
+        self.health_timer = QTimer()
+        self.health_timer.timeout.connect(self._check_watcher_health)
+        self.health_timer.start(60000)
+
     def _start_watcher(self):
         if self.watcher and self.watcher.is_running():
             return
@@ -124,6 +129,13 @@ class QuickFindService:
     def _stop_watcher(self):
         if self.watcher:
             self.watcher.stop()
+
+    def _check_watcher_health(self):
+        """Watcher çökmüşse yeniden başlat"""
+        if self.watcher and not self.watcher.is_running():
+            self.tray.setToolTip("QuickFind — Watcher yeniden başlatılıyor...")
+            self.watcher = None
+            self._start_watcher()
 
     def _on_status_changed(self, msg):
         self.tray.setToolTip(f"QuickFind — {msg}")
